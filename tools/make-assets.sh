@@ -13,19 +13,13 @@ if [ -n "${TRAVIS_TAG}" ]; then
 fi
 
 rm -rf $DES
-mkdir $DES
-cp ./assets/assets.json $DES/
-
-if [ -f ./tmp/requests.json.gz ]; then
-    gunzip -c ./tmp/requests.json.gz > $DES/requests.json
-fi
+cp -R ./assets $DES/
 
 mkdir $DES/thirdparties
 cp -R ../uAssets/thirdparties/easylist-downloads.adblockplus.org $DES/thirdparties/
-cp -R ../uAssets/thirdparties/mirror1.malwaredomains.com         $DES/thirdparties/
 cp -R ../uAssets/thirdparties/pgl.yoyo.org                       $DES/thirdparties/
 cp -R ../uAssets/thirdparties/publicsuffix.org                   $DES/thirdparties/
-cp -R ../uAssets/thirdparties/www.malwaredomainlist.com          $DES/thirdparties/
+cp -R ../uAssets/thirdparties/urlhaus-filter                     $DES/thirdparties/
 
 mkdir $DES/ublock
 cp -R ../uAssets/filters/*                                       $DES/ublock/

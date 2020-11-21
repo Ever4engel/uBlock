@@ -24,16 +24,16 @@
 /******************************************************************************/
 
 µBlock.scriptletFilteringEngine = (function() {
-    const µb = µBlock,
-        duplicates = new Set(),
-        scriptletCache = new µb.MRUCache(32),
-        scriptletsRegister = new Map(),
-        exceptionsRegister = new Set(),
-        reEscapeScriptArg = /[\\'"]/g;
+    const µb = µBlock;
+    const duplicates = new Set();
+    const scriptletCache = new µb.MRUCache(32);
+    const reEscapeScriptArg = /[\\'"]/g;
 
-    let acceptedCount = 0,
-        discardedCount = 0,
-        scriptletDB = new µb.staticExtFilteringEngine.HostnameBasedDB();
+    const scriptletDB = new µb.staticExtFilteringEngine.HostnameBasedDB(1);
+    const sessionScriptletDB = new µb.staticExtFilteringEngine.SessionDB();
+
+    let acceptedCount = 0;
+    let discardedCount = 0;
 
     const api = {
         get acceptedCount() {
@@ -66,7 +66,7 @@
     // Consequently, the programmatic-injection code path is taken only with
     // Chromium-based browsers.
 
-    const contentscriptCode = (function() {
+    const contentscriptCode = (( ) => {
         const parts = [
             '(',
             function(hostname, scriptlets) {
@@ -76,7 +76,7 @@
                 ) {
                     return;
                 }
-                let injectScriptlets = function(d) {
+                const injectScriptlets = function(d) {
                     let script;
                     try {
                         script = d.createElement('script');
@@ -94,64 +94,6 @@
                     }
                 };
                 injectScriptlets(document);
-                let processIFrame = function(iframe) {
-                    let src = iframe.src;
-                    if ( /^https?:\/\//.test(src) === false ) {
-                        injectScriptlets(iframe.contentDocument);
-                    }
-                };
-                let observerTimer,
-                    observerLists = [];
-                let observerAsync = function() {
-                    for ( let nodelist of observerLists ) {
-                        for ( let node of nodelist ) {
-                            if ( node.nodeType !== 1 ) { continue; }
-                            if ( node.parentElement === null ) { continue; }
-                            if ( node.localName === 'iframe' ) {
-                                processIFrame(node);
-                            }
-                            if ( node.childElementCount === 0 ) { continue; }
-                            let iframes = node.querySelectorAll('iframe');
-                            for ( let iframe of iframes ) {
-                                processIFrame(iframe);
-                            }
-                        }
-                    }
-                    observerLists = [];
-                    observerTimer = undefined;
-                };
-                let ready = function(ev) {
-                    if ( ev !== undefined ) {
-                        window.removeEventListener(ev.type, ready);
-                    }
-                    let iframes = document.getElementsByTagName('iframe');
-                    if ( iframes.length !== 0 ) {
-                        observerLists.push(iframes);
-                        observerTimer = setTimeout(observerAsync, 1);
-                    }
-                    let observer = new MutationObserver(function(mutations) {
-                        for ( let mutation of mutations ) {
-                            if ( mutation.addedNodes.length !== 0 ) {
-                                observerLists.push(mutation.addedNodes);
-                            }
-                        }
-                        if (
-                            observerLists.length !== 0 &&
-                            observerTimer === undefined
-                        ) {
-                            observerTimer = setTimeout(observerAsync, 1);
-                        }
-                    });
-                    observer.observe(
-                        document.documentElement,
-                        { childList: true, subtree: true }
-                    );
-                };
-                if ( document.readyState === 'loading' ) {
-                    window.addEventListener('DOMContentLoaded', ready);
-                } else {
-                    ready();
-                }
             }.toString(),
             ')(',
                 '"', 'hostname-slot', '", ',
@@ -170,23 +112,57 @@
             }
         };
     })();
-    
-    const lookupScriptlet = function(raw, reng, toInject) {
-        if ( toInject.has(raw) ) { return; }
+
+    // TODO: Probably should move this into StaticFilteringParser
+    // https://github.com/uBlockOrigin/uBlock-issues/issues/1031
+    //   Normalize scriptlet name to its canonical, unaliased name.
+    const normalizeRawFilter = function(rawFilter) {
+        const rawToken = rawFilter.slice(4, -1);
+        const rawEnd = rawToken.length;
+        let end = rawToken.indexOf(',');
+        if ( end === -1 ) { end = rawEnd; }
+        const token = rawToken.slice(0, end).trim();
+        const alias = token.endsWith('.js') ? token.slice(0, -3) : token;
+        let normalized = µb.redirectEngine.aliases.get(`${alias}.js`);
+        normalized = normalized === undefined
+            ? alias
+            : normalized.slice(0, -3);
+        let beg = end + 1;
+        while ( beg < rawEnd ) {
+            end = rawToken.indexOf(',', beg);
+            if ( end === -1 ) { end = rawEnd; }
+            normalized += ', ' + rawToken.slice(beg, end).trim();
+            beg = end + 1;
+        }
+        return `+js(${normalized})`;
+    };
+
+    const lookupScriptlet = function(rawToken, reng, toInject) {
+        if ( toInject.has(rawToken) ) { return; }
         if ( scriptletCache.resetTime < reng.modifyTime ) {
             scriptletCache.reset();
         }
-        let content = scriptletCache.lookup(raw);
+        let content = scriptletCache.lookup(rawToken);
         if ( content === undefined ) {
-            const pos = raw.indexOf(',');
+            const pos = rawToken.indexOf(',');
             let token, args;
             if ( pos === -1 ) {
-                token = raw;
+                token = rawToken;
             } else {
-                token = raw.slice(0, pos).trim();
-                args = raw.slice(pos + 1).trim();
+                token = rawToken.slice(0, pos).trim();
+                args = rawToken.slice(pos + 1).trim();
             }
-            content = reng.resourceContentFromName(token, 'application/javascript');
+            // TODO: The alias lookup can be removed once scriptlet resources
+            //       with obsolete name are converted to their new name.
+            if ( reng.aliases.has(token) ) {
+                token = reng.aliases.get(token);
+            } else {
+                token = `${token}.js`;
+            }
+            content = reng.resourceContentFromName(
+                token,
+                'application/javascript'
+            );
             if ( !content ) { return; }
             if ( args ) {
                 content = patchScriptlet(content, args);
@@ -196,22 +172,31 @@
                 'try {\n' +
                     content + '\n' +
                 '} catch ( e ) { }';
-            scriptletCache.add(raw, content);
+            scriptletCache.add(rawToken, content);
         }
-        toInject.set(raw, content);
+        toInject.set(rawToken, content);
     };
 
-    // Fill template placeholders. Return falsy if:
-    // - At least one argument contains anything else than /\w/ and `.`
-
+    // Fill-in scriptlet argument placeholders.
     const patchScriptlet = function(content, args) {
+        let s = args;
+        let len = s.length;
+        let beg = 0, pos = 0;
         let i = 1;
-        while ( args !== '' ) {
-            let pos = args.indexOf(',');
-            if ( pos === -1 ) { pos = args.length; }
-            const arg = args.slice(0, pos).trim().replace(reEscapeScriptArg, '\\$&');
-            content = content.replace('{{' + i + '}}', arg);
-            args = args.slice(pos + 1).trim();
+        while ( beg < len ) {
+            pos = s.indexOf(',', pos);
+            // Escaped comma? If so, skip.
+            if ( pos > 0 && s.charCodeAt(pos - 1) === 0x5C /* '\\' */ ) {
+                s = s.slice(0, pos - 1) + s.slice(pos);
+                len -= 1;
+                continue;
+            }
+            if ( pos === -1 ) { pos = len; }
+            content = content.replace(
+                `{{${i}}}`,
+                s.slice(beg, pos).trim().replace(reEscapeScriptArg, '\\$&')
+            );
+            beg = pos = pos + 1;
             i++;
         }
         return content;
@@ -227,7 +212,7 @@
             .setDocOriginFromURL(details.url)
             .setFilter({
                 source: 'cosmetic',
-                raw: (isException ? '#@#' : '##') + '+js(' + token + ')'
+                raw: (isException ? '#@#' : '##') + `+js(${token})`
             })
             .toLogger();
     };
@@ -241,17 +226,23 @@
 
     api.freeze = function() {
         duplicates.clear();
+        scriptletDB.collectGarbage();
     };
 
-    api.compile = function(parsed, writer) {
+    api.compile = function(parser, writer) {
         // 1001 = scriptlet injection
         writer.select(1001);
 
         // Only exception filters are allowed to be global.
+        const { raw, exception } = parser.result;
+        const normalized = normalizeRawFilter(raw);
 
-        if ( parsed.hostnames.length === 0 ) {
-            if ( parsed.exception ) {
-                writer.push([ 32, 0 | 0b0001, '', parsed.suffix ]);
+        // Tokenless is meaningful only for exception filters.
+        if ( normalized === '+js()' && exception === false ) { return; }
+
+        if ( parser.hasOptions() === false ) {
+            if ( exception ) {
+                writer.push([ 32, '', 1, normalized ]);
             }
             return;
         }
@@ -260,19 +251,16 @@
         //   Ignore instances of exception filter with negated hostnames,
         //   because there is no way to create an exception to an exception.
 
-        for ( let hn of parsed.hostnames ) {
-            const negated = hn.charCodeAt(0) === 0x7E /* '~' */;
-            if ( negated ) {
-                hn = hn.slice(1);
+        for ( const { hn, not, bad } of parser.extOptions() ) {
+            if ( bad ) { continue; }
+            let kind = 0;
+            if ( exception ) {
+                if ( not ) { continue; }
+                kind |= 1;
+            } else if ( not ) {
+                kind |= 1;
             }
-            let hash = µb.staticExtFilteringEngine.compileHostnameToHash(hn);
-            if ( parsed.exception ) {
-                if ( negated ) { continue; }
-                hash |= 0b0001;
-            } else if ( negated ) {
-                hash |= 0b0001;
-            }
-            writer.push([ 32, hash, hn, parsed.suffix ]);
+            writer.push([ 32, hn, kind, normalized ]);
         }
     };
 
@@ -295,12 +283,17 @@
             duplicates.add(fingerprint);
             const args = reader.args();
             if ( args.length < 4 ) { continue; }
-            scriptletDB.add(
-                args[1],
-                { hostname: args[2], token: args[3].slice(4, -1) }
-            );
+            scriptletDB.store(args[1], args[2], args[3].slice(4, -1));
         }
     };
+
+    api.getSession = function() {
+        return sessionScriptletDB;
+    };
+
+    const $scriptlets = new Set();
+    const $exceptions = new Set();
+    const $scriptletToCodeMap = new Map();
 
     api.retrieve = function(request) {
         if ( scriptletDB.size === 0 ) { return; }
@@ -320,55 +313,68 @@
             return;
         }
 
-        const domain = request.domain;
-        const entity = request.entity;
+        $scriptlets.clear();
+        $exceptions.clear();
 
-        const entries = [];
-        const domainHash = µb.staticExtFilteringEngine.makeHash(domain);
-        if ( domainHash !== 0 ) {
-            scriptletDB.retrieve(domainHash, hostname, entries);
+        if ( sessionScriptletDB.isNotEmpty ) {
+            sessionScriptletDB.retrieve([ null, $exceptions ]);
         }
-        const entityHash = µb.staticExtFilteringEngine.makeHash(entity);
-        if ( entityHash !== 0 ) {
-            scriptletDB.retrieve(entityHash, entity, entries);
+        scriptletDB.retrieve(hostname, [ $scriptlets, $exceptions ]);
+        if ( request.entity !== '' ) {
+            scriptletDB.retrieve(
+                `${hostname.slice(0, -request.domain.length)}${request.entity}`,
+                [ $scriptlets, $exceptions ]
+            );
         }
-        scriptletDB.retrieve(0, hostname, entries);
-        for ( const entry of entries ) {
-            lookupScriptlet(entry.token, reng, scriptletsRegister);
-        }
+        if ( $scriptlets.size === 0 ) { return; }
 
-        if ( scriptletsRegister.size === 0 ) { return; }
-
-        // Collect exception filters.
-        entries.length = 0;
-        if ( domainHash !== 0 ) {
-            scriptletDB.retrieve(domainHash | 0b0001, hostname, entries);
-        }
-        if ( entityHash !== 0 ) {
-            scriptletDB.retrieve(entityHash | 0b0001, entity, entries);
-        }
-        scriptletDB.retrieve(0 | 0b0001, hostname, entries);
-        for ( const entry of entries ) {
-            exceptionsRegister.add(entry.token);
-        }
-
-        // Return an array of scriptlets, and log results if needed. 
-        const out = [];
         const loggerEnabled = µb.logger.enabled;
-        for ( const entry of scriptletsRegister ) {
-            const isException = exceptionsRegister.has(entry[0]);
+
+        // Wholly disable scriptlet injection?
+        if ( $exceptions.has('') ) {
+            if ( loggerEnabled ) {
+                logOne(true, '', request);
+            }
+            return;
+        }
+
+        $scriptletToCodeMap.clear();
+        for ( const rawToken of $scriptlets ) {
+            lookupScriptlet(rawToken, reng, $scriptletToCodeMap);
+        }
+        if ( $scriptletToCodeMap.size === 0 ) { return; }
+
+        // Return an array of scriptlets, and log results if needed.
+        const out = [];
+        for ( const [ rawToken, code ] of $scriptletToCodeMap ) {
+            const isException = $exceptions.has(rawToken);
             if ( isException === false ) {
-                out.push(entry[1]);
+                out.push(code);
             }
             if ( loggerEnabled ) {
-                logOne(isException, entry[0], request);
+                logOne(isException, rawToken, request);
             }
         }
 
-        scriptletsRegister.clear();
-        exceptionsRegister.clear();
-
         if ( out.length === 0 ) { return; }
+
+        if ( µb.hiddenSettings.debugScriptlets ) {
+            out.unshift('debugger;');
+        }
+
+        // https://github.com/uBlockOrigin/uBlock-issues/issues/156
+        //   Provide a private Map() object available for use by all
+        //   scriptlets.
+        out.unshift(
+            '(function() {',
+            '// >>>> start of private namespace',
+            ''
+        );
+        out.push(
+            '',
+            '// <<<< end of private namespace',
+            '})();'
+        );
 
         return out.join('\n');
     };
@@ -389,18 +395,15 @@
         const scriptlets = µb.scriptletFilteringEngine.retrieve(request);
         if ( scriptlets === undefined ) { return; }
         let code = contentscriptCode.assemble(request.hostname, scriptlets);
-        if ( µb.hiddenSettings.debugScriptlets ) {
+        if ( µb.hiddenSettings.debugScriptletInjector ) {
             code = 'debugger;\n' + code;
         }
-        vAPI.tabs.injectScript(
-            details.tabId,
-            {
-                code: code,
-                frameId: details.frameId,
-                matchAboutBlank: false,
-                runAt: 'document_start'
-            }
-        );
+        vAPI.tabs.executeScript(details.tabId, {
+            code,
+            frameId: details.frameId,
+            matchAboutBlank: true,
+            runAt: 'document_start',
+        });
     };
 
     api.toSelfie = function() {
@@ -408,7 +411,39 @@
     };
 
     api.fromSelfie = function(selfie) {
-        scriptletDB = new µb.staticExtFilteringEngine.HostnameBasedDB(selfie);
+        scriptletDB.fromSelfie(selfie);
+    };
+
+    api.benchmark = async function() {
+        const requests = await µb.loadBenchmarkDataset();
+        if ( Array.isArray(requests) === false || requests.length === 0 ) {
+            log.print('No requests found to benchmark');
+            return;
+        }
+        log.print('Benchmarking scriptletFilteringEngine.retrieve()...');
+        const details = {
+            domain: '',
+            entity: '',
+            hostname: '',
+            tabId: 0,
+            url: '',
+        };
+        let count = 0;
+        const t0 = self.performance.now();
+        for ( let i = 0; i < requests.length; i++ ) {
+            const request = requests[i];
+            if ( request.cpt !== 'main_frame' ) { continue; }
+            count += 1;
+            details.url = request.url;
+            details.hostname = µb.URI.hostnameFromURI(request.url);
+            details.domain = µb.URI.domainFromHostname(details.hostname);
+            details.entity = µb.URI.entityFromDomain(details.domain);
+            void this.retrieve(details);
+        }
+        const t1 = self.performance.now();
+        const dur = t1 - t0;
+        log.print(`Evaluated ${count} requests in ${dur.toFixed(0)} ms`);
+        log.print(`\tAverage: ${(dur / count).toFixed(3)} ms per request`);
     };
 
     return api;

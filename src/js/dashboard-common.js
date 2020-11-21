@@ -19,7 +19,7 @@
     Home: https://github.com/gorhill/uBlock
 */
 
-/* global CodeMirror, uDom */
+/* global uDom */
 
 'use strict';
 
@@ -34,7 +34,7 @@ self.uBlockDashboard = self.uBlockDashboard || {};
 
 self.uBlockDashboard.mergeNewLines = function(text, newText) {
     // Step 1: build dictionary for existing lines.
-    const fromDict = Object.create(null);
+    const fromDict = new Map();
     let lineBeg = 0;
     let textEnd = text.length;
     while ( lineBeg < textEnd ) {
@@ -45,17 +45,15 @@ self.uBlockDashboard.mergeNewLines = function(text, newText) {
                 lineEnd = textEnd;
             }
         }
-        let line = text.slice(lineBeg, lineEnd).trim();
+        const line = text.slice(lineBeg, lineEnd).trim();
         lineBeg = lineEnd + 1;
-        if ( line.length === 0 ) {
-            continue;
-        }
+        if ( line.length === 0 ) { continue; }
         const hash = line.slice(0, 8);
-        const bucket = fromDict[hash];
+        const bucket = fromDict.get(hash);
         if ( bucket === undefined ) {
-            fromDict[hash] = line;
+            fromDict.set(hash, line);
         } else if ( typeof bucket === 'string' ) {
-            fromDict[hash] = [bucket, line];
+            fromDict.set(hash, [ bucket, line ]);
         } else /* if ( Array.isArray(bucket) ) */ {
             bucket.push(line);
         }
@@ -73,7 +71,7 @@ self.uBlockDashboard.mergeNewLines = function(text, newText) {
                 lineEnd = textEnd;
             }
         }
-        let line = newText.slice(lineBeg, lineEnd).trim();
+        const line = newText.slice(lineBeg, lineEnd).trim();
         lineBeg = lineEnd + 1;
         if ( line.length === 0 ) {
             if ( out[out.length - 1] !== '' ) {
@@ -81,7 +79,7 @@ self.uBlockDashboard.mergeNewLines = function(text, newText) {
             }
             continue;
         }
-        const bucket = fromDict[line.slice(0, 8)];
+        const bucket = fromDict.get(line.slice(0, 8));
         if ( bucket === undefined ) {
             out.push(line);
             continue;
@@ -96,7 +94,11 @@ self.uBlockDashboard.mergeNewLines = function(text, newText) {
         }
     }
 
-    return text.trim() + '\n' + out.join('\n');
+    const append = out.join('\n').trim();
+    if ( text !== '' && append !== '' ) {
+        text += '\n\n';
+    }
+    return text + append;
 };
 
 /******************************************************************************/
@@ -147,66 +149,40 @@ self.uBlockDashboard.patchCodeMirrorEditor = (function() {
     let lastGutterClick = 0;
     let lastGutterLine = 0;
 
-    const onGutterClicked = function(cm, line) {
+    const onGutterClicked = function(cm, line, gutter) {
+        if ( gutter !== 'CodeMirror-linenumbers' ) { return; }
+        grabFocusAsync(cm);
         const delta = Date.now() - lastGutterClick;
+        // Single click
         if ( delta >= 500 || line !== lastGutterLine ) {
             cm.setSelection(
-                { line: line, ch: 0 },
+                { line, ch: 0 },
                 { line: line + 1, ch: 0 }
             );
             lastGutterClick = Date.now();
             lastGutterLine = line;
-        } else {
-            cm.setSelection(
-                { line: 0, ch: 0 },
-                { line: cm.lineCount(), ch: 0 },
-                { scroll: false }
-            );
-            lastGutterClick = 0;
+            return;
         }
-        grabFocusAsync(cm);
-    };
-
-    let resizeTimer,
-        resizeObserver;
-    const resize = function(cm) {
-        resizeTimer = undefined;
-        const child = document.querySelector('.codeMirrorFillVertical');
-        if ( child === null ) { return; }
-        const prect = document.documentElement.getBoundingClientRect();
-        const crect = child.getBoundingClientRect();
-        const cssHeight = Math.floor(Math.max(prect.bottom - crect.top, 80)) + 'px';
-        if ( child.style.height === cssHeight ) { return; }
-        child.style.height = cssHeight;
-        // https://github.com/gorhill/uBlock/issues/3694
-        //   Need to call cm.refresh() when resizing occurs. However the
-        //   cursor position may end up outside the viewport, hence we also
-        //   call cm.scrollIntoView() to address this.
-        //   Reference: https://codemirror.net/doc/manual.html#api_sizing
-        if ( cm instanceof CodeMirror ) {
-            cm.refresh();
-            cm.scrollIntoView(null);
+        // Double click: select fold-able block or all
+        let lineFrom = 0;
+        let lineTo = cm.lineCount();
+        const foldFn = cm.getHelper({ line, ch: 0 }, 'fold');
+        if ( foldFn instanceof Function ) {
+            const range = foldFn(cm, { line, ch: 0 });
+            if ( range !== undefined ) {
+                lineFrom = range.from.line;
+                lineTo = range.to.line + 1;
+            }
         }
-    };
-    const resizeAsync = function(cm, delay) {
-        if ( resizeTimer !== undefined ) { return; }
-        resizeTimer = vAPI.setTimeout(
-            resize.bind(null, cm),
-            typeof delay === 'number' ? delay : 66
+        cm.setSelection(
+            { line: lineFrom, ch: 0 },
+            { line: lineTo, ch: 0 },
+            { scroll: false }
         );
+        lastGutterClick = 0;
     };
 
     return function(cm) {
-        if ( document.querySelector('.codeMirrorFillVertical') !== null ) {
-            const boundResizeAsync = resizeAsync.bind(null, cm);
-            window.addEventListener('resize', boundResizeAsync);
-            resizeObserver = new MutationObserver(boundResizeAsync);
-            resizeObserver.observe(document.querySelector('.body'), {
-                childList: true,
-                subtree: true
-            });
-            resizeAsync(cm, 1);
-        }
         if ( cm.options.inputStyle === 'contenteditable' ) {
             cm.on('beforeSelectionChange', patchSelectAll);
         }
@@ -216,13 +192,24 @@ self.uBlockDashboard.patchCodeMirrorEditor = (function() {
 
 /******************************************************************************/
 
+self.uBlockDashboard.openOrSelectPage = function(url, options = {}) {
+    let ev;
+    if ( url instanceof MouseEvent ) {
+        ev = url;
+        url = ev.target.getAttribute('href');
+    } 
+    const details = Object.assign({ url, select: true, index: -1 }, options);
+    vAPI.messaging.send('default', {
+        what: 'gotoURL',
+        details,
+    });
+    if ( ev ) {
+        ev.preventDefault();
+    }
+};
+
+/******************************************************************************/
+
 // Open links in the proper window
 uDom('a').attr('target', '_blank');
 uDom('a[href*="dashboard.html"]').attr('target', '_parent');
-uDom('.whatisthis').on('click', function() {
-    uDom(this)
-        .parent()
-        .descendants('.whatisthis-expandable')
-        .first()
-        .toggleClass('whatisthis-expanded');
-});

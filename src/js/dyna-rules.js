@@ -25,11 +25,12 @@
 
 /******************************************************************************/
 
-(function() {
+(( ) => {
 
 /******************************************************************************/
 
-const messaging = vAPI.messaging;
+const psl = self.publicSuffixList;
+const hostnameToDomainMap = new Map();
 
 const mergeView = new CodeMirror.MergeView(
     document.querySelector('.codeMirrorMergeContainer'),
@@ -41,7 +42,7 @@ const mergeView = new CodeMirror.MergeView(
         lineWrapping: false,
         origLeft: '',
         revertButtons: true,
-        value: ''
+        value: '',
     }
 );
 mergeView.editor().setOption('styleActiveLine', true);
@@ -50,15 +51,22 @@ mergeView.leftOriginal().setOption('readOnly', 'nocursor');
 
 uBlockDashboard.patchCodeMirrorEditor(mergeView.editor());
 
-const unfilteredRules = {
-    orig: { doc: mergeView.leftOriginal(), rules: [] },
-    edit: { doc: mergeView.editor(), rules: [] }
+const thePanes = {
+    orig: {
+        doc: mergeView.leftOriginal(),
+        original: [],
+        modified: [],
+    },
+    edit: {
+        doc: mergeView.editor(),
+        original: [],
+        modified: [],
+    },
 };
 
 let cleanEditToken = 0;
 let cleanEditText = '';
-
-let differ;
+let isCollapsed = false;
 
 /******************************************************************************/
 
@@ -68,7 +76,7 @@ let differ;
 // observer is necessary because there is no hook for uBO to overwrite
 // reliably the default title attribute assigned by CodeMirror.
 
-(function() {
+{
     const i18nCommitStr = vAPI.i18n('rulesCommit');
     const i18nRevertStr = vAPI.i18n('rulesRevert');
     const commitArrowSelector = '.CodeMirror-merge-copybuttons-left .CodeMirror-merge-copy-reverse:not([title="' + i18nCommitStr + '"])';
@@ -95,6 +103,16 @@ let differ;
         { attributes: true, attributeFilter: [ 'title' ], subtree: true }
     );
 
+}
+
+/******************************************************************************/
+
+const getDiffer = (( ) => {
+    let differ;
+    return ( ) => {
+        if ( differ === undefined ) { differ = new diff_match_patch(); }
+        return differ;
+    };
 })();
 
 /******************************************************************************/
@@ -103,9 +121,9 @@ let differ;
 // https://github.com/codemirror/CodeMirror/blob/3e1bb5fff682f8f6cbfaef0e56c61d62403d4798/addon/search/search.js#L22
 // ... and modified as needed.
 
-const updateOverlay = (function() {
+const updateOverlay = (( ) => {
     let reFilter;
-    let mode = {
+    const mode = {
         token: function(stream) {
             if ( reFilter !== undefined ) {
                 reFilter.lastIndex = stream.pos;
@@ -137,108 +155,117 @@ const updateOverlay = (function() {
 // - Minimum amount of text updated
 
 const rulesToDoc = function(clearHistory) {
-    for ( let key in unfilteredRules ) {
-        if ( unfilteredRules.hasOwnProperty(key) === false ) { continue; }
-        let doc = unfilteredRules[key].doc;
-        let rules = filterRules(key);
+    const orig = thePanes.orig.doc;
+    const edit = thePanes.edit.doc;
+    orig.startOperation();
+    edit.startOperation();
+
+    for ( const key in thePanes ) {
+        if ( thePanes.hasOwnProperty(key) === false ) { continue; }
+        const doc = thePanes[key].doc;
+        const rules = filterRules(key);
         if (
+            clearHistory ||
             doc.lineCount() === 1 && doc.getValue() === '' ||
             rules.length === 0
         ) {
-            doc.setValue(rules.length !== 0 ? rules.join('\n') : '');
+            doc.setValue(rules.length !== 0 ? rules.join('\n') + '\n' : '');
             continue;
         }
-        if ( differ === undefined ) { differ = new diff_match_patch(); }
+        // https://github.com/uBlockOrigin/uBlock-issues/issues/593
+        //   Ensure the text content always ends with an empty line to avoid
+        //   spurious diff entries.
+        // https://github.com/uBlockOrigin/uBlock-issues/issues/657
+        //   Diff against unmodified beforeText so that the last newline can
+        //   be reported in the diff and thus appended if needed.
         let beforeText = doc.getValue();
-        let afterText = rules.join('\n');
-        let diffs = differ.diff_main(beforeText, afterText);
-        doc.startOperation();
-        let i = diffs.length,
-            iedit = beforeText.length;
+        let afterText = rules.join('\n').trim();
+        if ( afterText !== '' ) { afterText += '\n'; }
+        const diffs = getDiffer().diff_main(beforeText, afterText);
+        let i = diffs.length;
+        let iedit = beforeText.length;
         while ( i-- ) {
-            let diff = diffs[i];
+            const diff = diffs[i];
             if ( diff[0] === 0 ) {
                 iedit -= diff[1].length;
                 continue;
             }
-            let end = doc.posFromIndex(iedit);
+            const end = doc.posFromIndex(iedit);
             if ( diff[0] === 1 ) {
                 doc.replaceRange(diff[1], end, end);
                 continue;
             }
             /* diff[0] === -1 */
             iedit -= diff[1].length;
-            let beg = doc.posFromIndex(iedit);
+            const beg = doc.posFromIndex(iedit);
             doc.replaceRange('', beg, end);
         }
-        doc.endOperation();
     }
+
+    // Mark ellipses as read-only
+    const marks = edit.getAllMarks();
+    for ( const mark of marks ) {
+        if ( mark.uboEllipsis !== true ) { continue; }
+        mark.clear();
+    }
+    if ( isCollapsed ) {
+        for ( let iline = 0, n = edit.lineCount(); iline < n; iline++ ) {
+            if ( edit.getLine(iline) !== '...' ) { continue; }
+            const mark = edit.markText(
+                { line: iline, ch: 0 },
+                { line: iline + 1, ch: 0 },
+                { atomic: true, readOnly: true }
+            );
+            mark.uboEllipsis = true;
+        }
+    }
+
+    orig.endOperation();
+    edit.endOperation();
     cleanEditText = mergeView.editor().getValue().trim();
     cleanEditToken = mergeView.editor().changeGeneration();
-    if ( clearHistory ) {
-        mergeView.editor().clearHistory();
-    }
+
+    if ( clearHistory !== true ) { return; }
+
+    mergeView.editor().clearHistory();
+    const chunks = mergeView.leftChunks();
+    if ( chunks.length === 0 ) { return; }
+    const ldoc = thePanes.orig.doc;
+    const { clientHeight } = ldoc.getScrollInfo();
+    const line = Math.min(chunks[0].editFrom, chunks[0].origFrom);
+    ldoc.setCursor(line, 0);
+    ldoc.scrollIntoView(
+        { line, ch: 0 },
+        (clientHeight - ldoc.defaultTextHeight()) / 2
+    );
 };
 
 /******************************************************************************/
 
 const filterRules = function(key) {
-    let rules = unfilteredRules[key].rules;
-    let filter = uDom.nodeFromSelector('#ruleFilter input').value;
-    if ( filter !== '' ) {
-        rules = rules.slice();
-        let i = rules.length;
-        while ( i-- ) {
-            if ( rules[i].indexOf(filter) === -1 ) {
-                rules.splice(i, 1);
-            }
-        }
+    const filter = uDom.nodeFromSelector('#ruleFilter input').value;
+    const rules = thePanes[key].modified;
+    if ( filter === '' ) { return rules; }
+    const out = [];
+    for ( const rule of rules ) {
+        if ( rule.indexOf(filter) === -1 ) { continue; }
+        out.push(rule);
     }
-    return rules;
+    return out;
 };
 
 /******************************************************************************/
 
-const renderRules = (function() {
-    let firstVisit = true;
-    let reIsSwitchRule = /^[a-z-]+: /;
-
-    // Switches always listed at the top.
-    let customSort = (a, b) => {
-        let aIsSwitch = reIsSwitchRule.test(a);
-        if ( reIsSwitchRule.test(b) === aIsSwitch ) {
-            return a.localeCompare(b);
-        }
-        return aIsSwitch ? -1 : 1;
-    };
-
-    return function(details) {
-        details.permanentRules.sort(customSort);
-        details.sessionRules.sort(customSort);
-        unfilteredRules.orig.rules = details.permanentRules;
-        unfilteredRules.edit.rules = details.sessionRules;
-        rulesToDoc(firstVisit);
-        if ( firstVisit ) {
-            firstVisit = false;
-            mergeView.editor().execCommand('goNextDiff');
-        }
-        onTextChanged(true);
-    };
-})();
-
-/******************************************************************************/
-
-const applyDiff = function(permanent, toAdd, toRemove) {
-    messaging.send(
-        'dashboard',
-        {
-            what: 'modifyRuleset',
-            permanent: permanent,
-            toAdd: toAdd,
-            toRemove: toRemove
-        },
-        renderRules
-    );
+const applyDiff = async function(permanent, toAdd, toRemove) {
+    const details = await vAPI.messaging.send('dashboard', {
+        what: 'modifyRuleset',
+        permanent: permanent,
+        toAdd: toAdd,
+        toRemove: toRemove,
+    });
+    thePanes.orig.original = details.permanentRules;
+    thePanes.edit.original = details.sessionRules;
+    onPresentationChanged();
 };
 
 /******************************************************************************/
@@ -259,13 +286,13 @@ mergeView.options.revertChunk = function(
     }
     if ( typeof fromStart.ch !== 'number' ) { fromStart.ch = 0; }
     if ( fromEnd.ch !== 0 ) { fromEnd.line += 1; }
-    let toAdd = from.getRange(
+    const toAdd = from.getRange(
         { line: fromStart.line, ch: 0 },
         { line: fromEnd.line, ch: 0 }
     );
     if ( typeof toStart.ch !== 'number' ) { toStart.ch = 0; }
     if ( toEnd.ch !== 0 ) { toEnd.line += 1; }
-    let toRemove = to.getRange(
+    const toRemove = to.getRange(
         { line: toStart.line, ch: 0 },
         { line: toEnd.line, ch: 0 }
     );
@@ -275,7 +302,7 @@ mergeView.options.revertChunk = function(
 /******************************************************************************/
 
 function handleImportFilePicker() {
-    let fileReaderOnLoadHandler = function() {
+    const fileReaderOnLoadHandler = function() {
         if ( typeof this.result !== 'string' || this.result === '' ) { return; }
         // https://github.com/chrisaljoudi/uBlock/issues/757
         // Support RequestPolicy rule syntax
@@ -288,10 +315,10 @@ function handleImportFilePicker() {
         }
         applyDiff(false, result, '');
     };
-    let file = this.files[0];
+    const file = this.files[0];
     if ( file === undefined || file.name === '' ) { return; }
     if ( file.type.indexOf('text') !== 0 ) { return; }
-    let fr = new FileReader();
+    const fr = new FileReader();
     fr.onload = fileReaderOnLoadHandler;
     fr.readAsText(file);
 }
@@ -299,7 +326,7 @@ function handleImportFilePicker() {
 /******************************************************************************/
 
 const startImportFilePicker = function() {
-    let input = document.getElementById('importFilePicker');
+    const input = document.getElementById('importFilePicker');
     // Reset to empty string, this will ensure an change event is properly
     // triggered if the user pick a file, even if it is the same as the last
     // one picked.
@@ -310,7 +337,7 @@ const startImportFilePicker = function() {
 /******************************************************************************/
 
 function exportUserRulesToFile() {
-    let filename = vAPI.i18n('rulesDefaultFileName')
+    const filename = vAPI.i18n('rulesDefaultFileName')
         .replace('{{datetime}}', uBlockDashboard.dateNowToSensibleString())
         .replace(/ +/g, '_');
     vAPI.download({
@@ -324,15 +351,15 @@ function exportUserRulesToFile() {
 
 /******************************************************************************/
 
-const onFilterChanged = (function() {
-    let timer,
-        overlay = null,
-        last = '';
+const onFilterChanged = (( ) => {
+    let timer;
+    let overlay = null;
+    let last = '';
 
-    let process = function() {
+    const process = function() {
         timer = undefined;
         if ( mergeView.editor().isClean(cleanEditToken) === false ) { return; }
-        let filter = uDom.nodeFromSelector('#ruleFilter input').value;
+        const filter = uDom.nodeFromSelector('#ruleFilter input').value;
         if ( filter === last ) { return; }
         last = filter;
         if ( overlay !== null ) {
@@ -349,34 +376,166 @@ const onFilterChanged = (function() {
     };
 
     return function() {
-        if ( timer !== undefined ) { clearTimeout(timer); }
-        timer = vAPI.setTimeout(process, 773);
+        if ( timer !== undefined ) { self.cancelIdleCallback(timer); }
+        timer = self.requestIdleCallback(process, { timeout: 773 });
     };
 })();
 
 /******************************************************************************/
 
-const onTextChanged = (function() {
+const onPresentationChanged = (( ) => {
+    let sortType = 1;
+
+    const reSwRule = /^([^/]+): ([^/ ]+) ([^ ]+)/;
+    const reRule   = /^([^ ]+) ([^/ ]+) ([^ ]+ [^ ]+)/;
+    const reUrlRule = /^([^ ]+) ([^ ]+) ([^ ]+ [^ ]+)/;
+
+    const sortNormalizeHn = function(hn) {
+        let domain = hostnameToDomainMap.get(hn);
+        if ( domain === undefined ) {
+            domain = /(\d|\])$/.test(hn) ? hn : psl.getDomain(hn);
+            hostnameToDomainMap.set(hn, domain);
+        }
+        let normalized = domain || hn;
+        if ( hn.length !== domain.length ) {
+            const subdomains = hn.slice(0, hn.length - domain.length - 1);
+            normalized += '.' + (
+                subdomains.includes('.')
+                    ? subdomains.split('.').reverse().join('.')
+                    : subdomains
+            );
+        }
+        return normalized;
+    };
+
+    const slotFromRule = rule => {
+        let type, srcHn, desHn, extra;
+        let match = reSwRule.exec(rule);
+        if ( match !== null ) {
+            type = ' ' + match[1];
+            srcHn = sortNormalizeHn(match[2]);
+            desHn = srcHn;
+            extra = match[3];
+        } else if ( (match = reRule.exec(rule)) !== null ) {
+            type = '\x10FFFE';
+            srcHn = sortNormalizeHn(match[1]);
+            desHn = sortNormalizeHn(match[2]);
+            extra = match[3];
+        } else if ( (match = reUrlRule.exec(rule)) !== null ) {
+            type = '\x10FFFF';
+            srcHn = sortNormalizeHn(match[1]);
+            desHn = sortNormalizeHn(vAPI.hostnameFromURI(match[2]));
+            extra = match[3];
+        }
+        if ( sortType === 0 ) {
+            return { rule, token: `${type} ${srcHn} ${desHn} ${extra}` };
+        }
+        if ( sortType === 1 ) {
+            return { rule, token: `${srcHn} ${type} ${desHn} ${extra}` };
+        }
+        return { rule, token: `${desHn} ${type} ${srcHn} ${extra}` };
+    };
+
+    const sort = rules => {
+        const slots = [];
+        for ( let i = 0; i < rules.length; i++ ) {
+            slots.push(slotFromRule(rules[i], 1));
+        }
+        slots.sort((a, b) => a.token.localeCompare(b.token));
+        for ( let i = 0; i < rules.length; i++ ) {
+            rules[i] = slots[i].rule;
+        }
+    };
+
+    const collapse = ( ) => {
+        if ( isCollapsed !== true ) { return; }
+        const diffs = getDiffer().diff_main(
+            thePanes.orig.modified.join('\n'),
+            thePanes.edit.modified.join('\n')
+        );
+        const ll = []; let il = 0, lellipsis = false;
+        const rr = []; let ir = 0, rellipsis = false;
+        for ( let i = 0; i < diffs.length; i++ ) {
+            const diff =  diffs[i];
+            if ( diff[0] === 0 ) {
+                lellipsis = rellipsis = true;
+                il += 1; ir += 1;
+                continue;
+            }
+            if ( diff[0] < 0 ) {
+                if ( lellipsis ) {
+                    ll.push('...');
+                    if ( rellipsis ) { rr.push('...'); }
+                    lellipsis = rellipsis = false;
+                }
+                ll.push(diff[1].trim());
+                il += 1;
+                continue;
+            }
+            /* diff[0] > 0 */
+            if ( rellipsis ) {
+                rr.push('...');
+                if ( lellipsis ) { ll.push('...'); }
+                lellipsis = rellipsis = false;
+            }
+            rr.push(diff[1].trim());
+            ir += 1;
+        }
+        if ( lellipsis ) { ll.push('...'); }
+        if ( rellipsis ) { rr.push('...'); }
+        thePanes.orig.modified = ll;
+        thePanes.edit.modified = rr;
+    };
+
+    return function(clearHistory) {
+        const origPane = thePanes.orig;
+        const editPane = thePanes.edit;
+        origPane.modified = origPane.original.slice();
+        editPane.modified = editPane.original.slice();
+        const select = document.querySelector('#ruleFilter select');
+        sortType = parseInt(select.value, 10);
+        if ( isNaN(sortType) ) { sortType = 1; }
+        {
+            const mode = origPane.doc.getMode();
+            mode.sortType = sortType;
+            mode.setHostnameToDomainMap(hostnameToDomainMap);
+            mode.setPSL(psl);
+        }
+        {
+            const mode = editPane.doc.getMode();
+            mode.sortType = sortType;
+            mode.setHostnameToDomainMap(hostnameToDomainMap);
+            mode.setPSL(psl);
+        }
+        sort(origPane.modified);
+        sort(editPane.modified);
+        collapse();
+        rulesToDoc(clearHistory);
+        onTextChanged(clearHistory);
+    };
+})();
+
+/******************************************************************************/
+
+const onTextChanged = (( ) => {
     let timer;
 
-    let process = function(now) {
+    const process = details => {
         timer = undefined;
         const diff = document.getElementById('diff');
         let isClean = mergeView.editor().isClean(cleanEditToken);
         if (
-            now &&
+            details === undefined &&
             isClean === false &&
             mergeView.editor().getValue().trim() === cleanEditText
         ) {
             cleanEditToken = mergeView.editor().changeGeneration();
             isClean = true;
         }
-        diff.classList.toggle('editing', isClean === false);
+        document.body.classList.toggle('editing', isClean === false);
         diff.classList.toggle('dirty', mergeView.leftChunks().length !== 0);
-        document.getElementById('editSaveButton').classList.toggle(
-            'disabled',
-            isClean
-        );
+        document.getElementById('editSaveButton')
+                .classList.toggle('disabled', isClean);
         const input = document.querySelector('#ruleFilter input');
         if ( isClean ) {
             input.removeAttribute('disabled');
@@ -388,23 +547,23 @@ const onTextChanged = (function() {
     };
 
     return function(now) {
-        if ( timer !== undefined ) { clearTimeout(timer); }
-        timer = now ? process(now) : vAPI.setTimeout(process, 57);
+        if ( timer !== undefined ) { self.cancelIdleCallback(timer); }
+        timer = now ? process() : self.requestIdleCallback(process, { timeout: 57 });
     };
 })();
 
 /******************************************************************************/
 
 const revertAllHandler = function() {
-    let toAdd = [], toRemove = [];
-    let left = mergeView.leftOriginal(),
-        edit = mergeView.editor();
-    for ( let chunk of mergeView.leftChunks() ) {
-        let addedLines = left.getRange(
+    const toAdd = [], toRemove = [];
+    const left = mergeView.leftOriginal();
+    const edit = mergeView.editor();
+    for ( const chunk of mergeView.leftChunks() ) {
+        const addedLines = left.getRange(
             { line: chunk.origFrom, ch: 0 },
             { line: chunk.origTo, ch: 0 }
         );
-        let removedLines = edit.getRange(
+        const removedLines = edit.getRange(
             { line: chunk.editFrom, ch: 0 },
             { line: chunk.editTo, ch: 0 }
         );
@@ -417,15 +576,15 @@ const revertAllHandler = function() {
 /******************************************************************************/
 
 const commitAllHandler = function() {
-    let toAdd = [], toRemove = [];
-    let left = mergeView.leftOriginal(),
-        edit = mergeView.editor();
-    for ( let chunk of mergeView.leftChunks() ) {
-        let addedLines = edit.getRange(
+    const toAdd = [], toRemove = [];
+    const left = mergeView.leftOriginal();
+    const edit = mergeView.editor();
+    for ( const chunk of mergeView.leftChunks() ) {
+        const addedLines = edit.getRange(
             { line: chunk.editFrom, ch: 0 },
             { line: chunk.editTo, ch: 0 }
         );
-        let removedLines = left.getRange(
+        const removedLines = left.getRange(
             { line: chunk.origFrom, ch: 0 },
             { line: chunk.origTo, ch: 0 }
         );
@@ -438,16 +597,15 @@ const commitAllHandler = function() {
 /******************************************************************************/
 
 const editSaveHandler = function() {
-    let editor = mergeView.editor();
-    let editText = editor.getValue().trim();
+    const editor = mergeView.editor();
+    const editText = editor.getValue().trim();
     if ( editText === cleanEditText ) {
         onTextChanged(true);
         return;
     }
-    if ( differ === undefined ) { differ = new diff_match_patch(); }
-    let toAdd = [], toRemove = [];
-    let diffs = differ.diff_main(cleanEditText, editText);
-    for ( let diff of diffs ) {
+    const toAdd = [], toRemove = [];
+    const diffs = getDiffer().diff_main(cleanEditText, editText);
+    for ( const diff of diffs ) {
         if ( diff[0] === 1 ) {
             toAdd.push(diff[1]);
         } else if ( diff[0] === -1 ) {
@@ -474,7 +632,20 @@ self.cloud.onPull = function(data, append) {
 
 /******************************************************************************/
 
-messaging.send('dashboard', { what: 'getRules' }, renderRules);
+self.hasUnsavedData = function() {
+    return mergeView.editor().isClean(cleanEditToken) === false;
+};
+
+/******************************************************************************/
+
+vAPI.messaging.send('dashboard', {
+    what: 'getRules',
+}).then(details => {
+    thePanes.orig.original = details.permanentRules;
+    thePanes.edit.original = details.sessionRules;
+    psl.fromSelfie(details.pslSelfie);
+    onPresentationChanged(true);
+});
 
 // Handle user interaction
 uDom('#importButton').on('click', startImportFilePicker);
@@ -484,9 +655,16 @@ uDom('#revertButton').on('click', revertAllHandler);
 uDom('#commitButton').on('click', commitAllHandler);
 uDom('#editSaveButton').on('click', editSaveHandler);
 uDom('#ruleFilter input').on('input', onFilterChanged);
+uDom('#ruleFilter select').on('input', ( ) => {
+    onPresentationChanged(true);
+});
+uDom('#ruleFilter #diffCollapse').on('click', ev => {
+    isCollapsed = ev.target.classList.toggle('active');
+    onPresentationChanged(true);
+});
 
 // https://groups.google.com/forum/#!topic/codemirror/UQkTrt078Vs
-mergeView.editor().on('updateDiff', function() { onTextChanged(); });
+mergeView.editor().on('updateDiff', ( ) => { onTextChanged(); });
 
 /******************************************************************************/
 

@@ -1,13 +1,8 @@
 body {
-    background-color: white;
-    border: 0;
-    color: black;
     display: flex;
     flex-direction: column;
     height: 100vh;
-    margin: 0;
     overflow: hidden;
-    padding: 0;
     width: 100vw;
     }
 textarea {
@@ -17,7 +12,7 @@ textarea {
     width: 100%;
     }
 .permatoolbar {
-    background-color: white;
+    background-color: var(--default-surface);
     border: 0;
     box-sizing: border-box;
     display: flex;
@@ -39,11 +34,12 @@ textarea {
     fill: #5F9EA0;
     }
 .permatoolbar .button:hover {
-    background-color: #eee;
+    background-color: var(--default-surface-hover);
     }
 #pageSelector {
+    min-width: 10em;
     padding: 0.25em 0;
-    width: 28em;
+    width: 50vw;
     }
 body[dir="ltr"] #pageSelector {
     margin-right: 1em;
@@ -122,20 +118,15 @@ body[dir="rtl"] #pageSelector {
     opacity: 1;
     }
 #netInspector #filterInput {
+    border: 1px solid gray;
     display: inline-flex;
     }
 #netInspector #filterInput > input {
-    min-width: 18em;
+    border: 0;
+    min-width: 16em;
     }
 #netInspector #filterExprButton {
-    position: absolute;
     transform: scaleY(-1);
-    }
-body[dir="ltr"] #netInspector #filterExprButton {
-    right: 0;
-    }
-body[dir="rtl"] #netInspector #filterExprButton {
-    left: 0;
     }
 #netInspector #filterExprButton:hover {
     background-color: transparent;
@@ -144,7 +135,7 @@ body[dir="rtl"] #netInspector #filterExprButton {
     transform: scaleY(1);
     }
 #netInspector #filterExprPicker {
-    background-color: white;
+    background-color: var(--default-surface);
     border: 1px solid gray;
     display: none;
     position: absolute;
@@ -176,9 +167,14 @@ body[dir="rtl"] #netInspector #filterExprPicker {
 #netInspector #filterExprPicker > div:last-of-type {
     border-bottom: 0;
     }
+#netInspector #filterExprPicker div {
+    display: flex;
+    }
 #netInspector #filterExprPicker span[data-filtex] {
+    align-items: center;
     border: 1px solid transparent;
     cursor: pointer;
+    display: inline-flex;
     margin: 0 0.5em 0 0;
     padding: 0.5em;
     white-space: nowrap;
@@ -237,7 +233,11 @@ body[dir="rtl"] #netInspector #filterExprPicker {
     }
 #vwRenderer .logEntry > div[data-status="1"],
 #netFilteringDialog > .panes > .details > div[data-status="1"] {
-    background-color: rgba(192, 0, 0, 0.1);
+    background-color: var(--logger-blocked-surface);
+    }
+#vwRenderer .logEntry > div[data-status="1"][data-modifier],
+#netFilteringDialog > .panes > .details > div[data-status="1"][data-modifier] {
+    background-color: var(--logger-modified-surface);
     }
 body.colorBlind #vwRenderer .logEntry > div[data-status="1"],
 body.colorBlind #netFilteringDialog > .panes > .details > div[data-status="1"] {
@@ -251,7 +251,7 @@ body.colorBlind #vwRenderer .logEntry > div[data-status="3"] {
     }
 #vwRenderer .logEntry > div[data-status="2"],
 #netFilteringDialog > .panes > .details > div[data-status="2"] {
-    background-color: rgba(0, 160, 0, 0.1);
+    background-color: var(--logger-allowed-surface);
     }
 body.colorBlind #vwRenderer .logEntry > div[data-status="2"],
 body.colorBlind #netFilteringDialog > .panes > .details > div[data-status="2"] {
@@ -260,13 +260,16 @@ body.colorBlind #netFilteringDialog > .panes > .details > div[data-status="2"] {
 #vwRenderer .logEntry > div[data-tabid="-1"] {
     text-shadow: 0 0.2em 0.4em #aaa;
     }
-#vwRenderer .logEntry > div.cosmetic,
+#vwRenderer .logEntry > div.cosmeticRealm,
 #vwRenderer .logEntry > div.redirect {
     background-color: rgba(255, 255, 0, 0.1);
     }
-body.colorBlind #vwRenderer .logEntry > div.cosmetic,
+body.colorBlind #vwRenderer .logEntry > div.cosmeticRealm,
 body.colorBlind #vwRenderer .logEntry > div.redirect {
     background-color: rgba(0, 19, 110, 0.1);
+    }
+#vwRenderer .logEntry > div[data-aliasid] {
+    color: mediumblue;
     }
 #vwRenderer .logEntry > div[data-type="tabLoad"] {
     background-color: #666;
@@ -321,6 +324,15 @@ body[dir="rtl"] #vwRenderer .logEntry > div > span:first-child {
 #vwRenderer .logEntry > div.messageRealm[data-type="tabLoad"] > span:nth-of-type(2) {
     text-align: center;
     }
+#vwRenderer .logEntry > div.cosmeticRealm > span:nth-of-type(2) > span:first-of-type {
+    display: none;
+    }
+#vwRenderer .logEntry > div.cosmeticRealm > span:nth-of-type(2) > span:last-of-type {
+    pointer-events: none;
+    }
+#vwRenderer .logEntry > div.cosmeticRealm.isException > span:nth-of-type(2) > span:last-of-type {
+    text-decoration: line-through rgba(0,0,255,0.7);
+    }
 #vwRenderer .logEntry > div > span:nth-of-type(3) {
     font: 12px monospace;
     padding-left: 0.3em;
@@ -335,6 +347,8 @@ body[dir="rtl"] #vwRenderer .logEntry > div > span:first-child {
     }
 #netInspector:not(.vExpanded) #vwRenderer .logEntry > div > span:nth-of-type(4) {
     direction: rtl;
+    text-align: right;
+    unicode-bidi: plaintext;
     }
 #vwRenderer #vwContent .logEntry > div > span:nth-of-type(4) {
     text-overflow: ellipsis;
@@ -356,6 +370,7 @@ body[dir="rtl"] #vwRenderer .logEntry > div > span:first-child {
 #vwRenderer #vwContent .logEntry > div > span:nth-of-type(6) {
     }
 #vwRenderer .logEntry > div > span:nth-of-type(7) {
+    position: relative;
     }
 #vwRenderer #vwContent .logEntry > div > span:nth-of-type(7) {
     text-overflow: ellipsis;
@@ -364,15 +379,16 @@ body[dir="rtl"] #vwRenderer .logEntry > div > span:first-child {
     overflow-y: auto;
     white-space: pre-line;
     }
-#vwRenderer .logEntry > div > span:nth-of-type(7) > span > b {
-    font-weight: bold;
-    }
 #vwRenderer .logEntry > div > span:nth-of-type(7) b {
-    font-weight: normal;
+    font-weight: bold;
     }
 #vwRenderer .logEntry > div[data-status="1"] > span:nth-of-type(7) b,
 #netFilteringDialog > .panes > .details > div[data-status="1"] b {
-    background-color: rgba(192, 0, 0, 0.2);
+    background-color: var(--logger-blocked-em-surface);
+    }
+#vwRenderer .logEntry > div[data-status="1"][data-modifier] > span:nth-of-type(7) b,
+#netFilteringDialog > .panes > .details > div[data-status="1"][data-modifier] b {
+    background-color: var(--logger-modified-em-surface);
     }
 body.colorBlind #vwRenderer .logEntry > div[data-status="1"] > span:nth-of-type(7) b,
 body.colorBlind #netFilteringDialog > .panes > .details > div[data-status="1"] b {
@@ -386,12 +402,41 @@ body.colorBlind #vwRenderer .logEntry > div[data-status="3"] > span:nth-of-type(
     }
 #vwRenderer .logEntry > div[data-status="2"] > span:nth-of-type(7) b,
 #netFilteringDialog > .panes > .details > div[data-status="2"] b {
-    background-color: rgba(0, 160, 0, 0.2);
+    background-color: var(--logger-allowed-em-surface);
     }
 body.colorBlind #vwRenderer .logEntry > div[data-status="2"] > span:nth-of-type(7) b,
 body.colorBlind #netFilteringDialog > .panes > .details > div[data-status="2"] b {
     background-color: rgba(255, 194, 57, 0.2);
     }
+#vwRenderer .logEntry > div > span:nth-of-type(7) a {
+    background-color: dimgray;
+    color: white;
+    display: none;
+    height: 100%;
+    padding: 0 0.25em;
+    opacity: 0.4;
+    position: absolute;
+    right: 0;
+    text-decoration: none;
+    top: 0;
+    }
+#netInspector.vExpanded #vwRenderer .logEntry > div > span:nth-of-type(7) a {
+    bottom: 0px;
+    height: unset;
+    padding: 0.25em;
+    top: unset;
+    }
+#vwRenderer .logEntry > div > span:nth-of-type(7) a::after {
+    content: '\2197';
+    }
+#vwRenderer .logEntry > div.networkRealm > span:nth-of-type(7):hover a {
+    align-items: center;
+    display: inline-flex;
+    }
+#vwRenderer .logEntry > div > span:nth-of-type(7) a:hover {
+    opacity: 1;
+    }
+
 #vwRenderer #vwBottom {
     background-color: #00F;
     height: 0;
@@ -408,11 +453,12 @@ body.colorBlind #netFilteringDialog > .panes > .details > div[data-status="2"] b
     }
 
 #popupContainer {
-    background: white;
+    background-color: var(--default-surface);
     border: 1px solid gray;
     bottom: 0;
-    box-sizing: border-box;
     display: none;
+    max-height: 70vh;
+    min-width: 360px;
     overflow: hidden;
     position: fixed;
     right: 0;
@@ -443,7 +489,7 @@ body.colorBlind #netFilteringDialog > .panes > .details > div[data-status="2"] b
     position: relative;
     }
 #modalOverlay > div > div:nth-of-type(1) {
-    background-color: white;
+    background-color: var(--default-surface);
     border: 0;
     box-sizing: border-box;
     padding: 1em;
@@ -452,13 +498,13 @@ body.colorBlind #netFilteringDialog > .panes > .details > div[data-status="2"] b
     width: 90vw;
     }
 #modalOverlay > div > div:nth-of-type(2) {
-    stroke: #000;
+    stroke: var(--default-ink);
     stroke-width: 3px;
     position: absolute;
     width: 1.6em;
     height: 1.6em;
     bottom: calc(100% + 2px);
-    background-color: white;
+    background-color: var(--default-surface);
     }
 body[dir="ltr"] #modalOverlay > div > div:nth-of-type(2) {
     right: 0;
@@ -467,7 +513,7 @@ body[dir="rtl"] #modalOverlay > div > div:nth-of-type(2) {
     left: 0;
     }
 #modalOverlay > div > div:nth-of-type(2):hover {
-    background-color: #eee;
+    background-color: var(--default-surface-hover);
     }
 #modalOverlay > div > div:nth-of-type(2) > * {
     pointer-events: none;
@@ -482,7 +528,6 @@ body[dir="rtl"] #modalOverlay > div > div:nth-of-type(2) {
 #netFilteringDialog select {
     max-width: 75%;
     outline: none;
-    padding: 0.2em;
 }
 #netFilteringDialog > .preview {
     align-items: center;
@@ -514,11 +559,11 @@ body[dir="rtl"] #modalOverlay > div > div:nth-of-type(2) {
     text-align: center;
     }
 #netFilteringDialog > .preview > * {
-    background-color: white;
     max-width: 100%;
     max-height: 20vh;
     }
 #netFilteringDialog > .preview > span {
+    background-color: white;
     cursor: pointer;
     padding: 0.5em;
     }
@@ -617,6 +662,7 @@ body[dir="rtl"] #netFilteringDialog > .panes > .details > div > span:nth-of-type
     border-left: 1px solid white;
     }
 #netFilteringDialog > .panes > .details > div > span:nth-of-type(2) {
+    flex-grow: 1;
     max-height: 20vh;
     overflow: hidden auto;
     white-space: pre-line
@@ -631,6 +677,26 @@ body[dir="rtl"] #netFilteringDialog > .panes > .details > div > span:nth-of-type
     }
 #netFilteringDialog > .panes > .details > div > span:nth-of-type(2) .fa-icon:hover {
     opacity: 1;
+    }
+#netFilteringDialog > .panes > .details .exceptor {
+    align-items: center;
+    border-left: 1px solid white;
+    cursor: pointer;
+    display: inline-flex;
+    font-family: monospace;
+    opacity: 0.8;
+    }
+#netFilteringDialog > .panes > .details .exceptor:hover {
+    opacity: 1;
+    }
+#netFilteringDialog > .panes > .details .exceptored .filter {
+    text-decoration: line-through;
+    }
+#netFilteringDialog > .panes > .details .exceptored .exceptor {
+    background-color: lightblue;
+    }
+#netFilteringDialog > .panes > .details .exceptor::before {
+    content: '#@#';
     }
 #netFilteringDialog > div.panes > .dynamic > .toolbar {
     padding-bottom: 1em;
@@ -813,31 +879,25 @@ body.colorBlind  #netFilteringDialog > div.panes > .dynamic .entry > .action > .
     margin-bottom: 0;
     }
 
-#loggerSettingsDialog {
+#loggerStatsDialog .sortedEntries {
     display: flex;
     flex-direction: column;
+    font-size: smaller;
     }
-#loggerSettingsDialog > div {
-    padding-bottom: 1em;
+#loggerStatsDialog .sortedEntries > div {
+    display: flex;
     }
-#loggerSettingsDialog > div:last-of-type {
-    padding-bottom: 0;
+#loggerStatsDialog .sortedEntries > div > span:first-of-type {
+    flex-grow: 0;
+    flex-shrink: 0;
+    padding: 0 2em 0 0;
+    text-align: right;
+    width: 3em;
     }
-#loggerSettingsDialog ul {
-    padding: 0;
-    }
-body[dir="ltr"] #loggerSettingsDialog ul {
-    padding-left: 2em;
-    }
-body[dir="rtl"] #loggerSettingsDialog ul {
-    padding-right: 2em;
-    }
-#loggerSettingsDialog li {
-    list-style-type: none;
-    margin: 0.5em 0 0 0;
-    }
-#loggerSettingsDialog input {
-    max-width: 6em;
+#loggerStatsDialog .sortedEntries > div > span:last-of-type {
+    flex-grow: 1;
+    flex-shrink: 1;
+    white-space: pre;
     }
 
 #loggerExportDialog {
@@ -872,6 +932,33 @@ body[dir="rtl"] #loggerSettingsDialog ul {
     height: 60vh;
     padding: 0.5em;
     white-space: pre;
+    }
+
+#loggerSettingsDialog {
+    display: flex;
+    flex-direction: column;
+    }
+#loggerSettingsDialog > div {
+    padding-bottom: 1em;
+    }
+#loggerSettingsDialog > div:last-of-type {
+    padding-bottom: 0;
+    }
+#loggerSettingsDialog ul {
+    padding: 0;
+    }
+body[dir="ltr"] #loggerSettingsDialog ul {
+    padding-left: 2em;
+    }
+body[dir="rtl"] #loggerSettingsDialog ul {
+    padding-right: 2em;
+    }
+#loggerSettingsDialog li {
+    list-style-type: none;
+    margin: 0.5em 0 0 0;
+    }
+#loggerSettingsDialog input {
+    max-width: 6em;
     }
 
 .hide {

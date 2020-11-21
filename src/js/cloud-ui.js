@@ -19,13 +19,13 @@
     Home: https://github.com/gorhill/uBlock
 */
 
-/* global uDom */
+/* global uDom, faIconsInit */
+
+'use strict';
 
 /******************************************************************************/
 
-(function() {
-
-'use strict';
+(( ) => {
 
 /******************************************************************************/
 
@@ -34,28 +34,58 @@ self.cloud = {
     datakey: '',
     data: undefined,
     onPush: null,
-    onPull: null
+    onPull: null,
 };
 
 /******************************************************************************/
 
-var widget = uDom.nodeFromId('cloudWidget');
-if ( widget === null ) {
-    return;
-}
+const widget = uDom.nodeFromId('cloudWidget');
+if ( widget === null ) { return; }
 
 self.cloud.datakey = widget.getAttribute('data-cloud-entry') || '';
-if ( self.cloud.datakey === '' ) {
-    return;
-}
-
-var messaging = vAPI.messaging;
+if ( self.cloud.datakey === '' ) { return; }
 
 /******************************************************************************/
 
-var onCloudDataReceived = function(entry) {
-    if ( entry instanceof Object === false ) {
+const fetchStorageUsed = async function() {
+    let elem = widget.querySelector('#cloudCapacity');
+    if ( elem.classList.contains('hide') ) { return; }
+    const result = await vAPI.messaging.send('cloudWidget', {
+        what: 'cloudUsed',
+        datakey: self.cloud.datakey,
+    });
+    if ( result instanceof Object === false ) {
+        elem.classList.add('hide');
         return;
+    }
+    const units = ' ' + vAPI.i18n('genericBytes');
+    elem.title = result.max.toLocaleString() + units;
+    const total = (result.total / result.max * 100).toFixed(1);
+    elem = elem.firstElementChild;
+    elem.style.width = `${total}%`;
+    elem.title = result.total.toLocaleString() + units;
+    const used = (result.used / result.total * 100).toFixed(1);
+    elem = elem.firstElementChild;
+    elem.style.width = `${used}%`;
+    elem.title = result.used.toLocaleString() + units;
+};
+
+/******************************************************************************/
+
+const fetchCloudData = async function() {
+    const info = widget.querySelector('#cloudInfo');
+
+    const entry = await vAPI.messaging.send('cloudWidget', {
+        what: 'cloudPull',
+        datakey: self.cloud.datakey,
+    });
+
+    const hasData = entry instanceof Object;
+    if ( hasData === false ) {
+        uDom.nodeFromId('cloudPull').setAttribute('disabled', '');
+        uDom.nodeFromId('cloudPullAndMerge').setAttribute('disabled', '');
+        info.textContent = '...\n...';
+        return entry;
     }
 
     self.cloud.data = entry.data;
@@ -63,7 +93,7 @@ var onCloudDataReceived = function(entry) {
     uDom.nodeFromId('cloudPull').removeAttribute('disabled');
     uDom.nodeFromId('cloudPullAndMerge').removeAttribute('disabled');
 
-    var timeOptions = {
+    const timeOptions = {
         weekday: 'short',
         year: 'numeric',
         month: 'short',
@@ -74,61 +104,46 @@ var onCloudDataReceived = function(entry) {
         timeZoneName: 'short'
     };
 
-    var time = new Date(entry.tstamp);
-    widget.querySelector('#cloudInfo').textContent =
+    const time = new Date(entry.tstamp);
+    info.textContent =
         entry.source + '\n' +
         time.toLocaleString('fullwide', timeOptions);
 };
 
 /******************************************************************************/
 
-var fetchCloudData = function() {
-    messaging.send(
-        'cloudWidget',
-        {
-            what: 'cloudPull',
-            datakey: self.cloud.datakey
-        },
-        onCloudDataReceived
-    );
+const pushData = async function() {
+    if ( typeof self.cloud.onPush !== 'function' ) { return; }
+
+    const error = await vAPI.messaging.send('cloudWidget', {
+        what: 'cloudPush',
+        datakey: self.cloud.datakey,
+        data: self.cloud.onPush(),
+    });
+    const failed = typeof error === 'string';
+    document.getElementById('cloudPush')
+            .classList
+            .toggle('error', failed);
+    document.querySelector('#cloudError')
+            .textContent = failed ? error : '';
+    if ( failed ) { return; }
+    fetchCloudData();
+    fetchStorageUsed();
 };
 
 /******************************************************************************/
 
-var pushData = function() {
-    if ( typeof self.cloud.onPush !== 'function' ) {
-        return;
-    }
-    messaging.send(
-        'cloudWidget',
-        {
-            what: 'cloudPush',
-            datakey: self.cloud.datakey,
-            data: self.cloud.onPush()
-        },
-        function(error) {
-            var failed = typeof error === 'string';
-            document.getElementById('cloudPush')
-                    .classList
-                    .toggle('error', failed);
-            document.querySelector('#cloudError')
-                    .textContent = failed ? error : '';
-            fetchCloudData();
-        }
-    );
-};
-
-/******************************************************************************/
-
-var pullData = function() {
+const pullData = function() {
     if ( typeof self.cloud.onPull === 'function' ) {
         self.cloud.onPull(self.cloud.data, false);
     }
+    document.getElementById('cloudPush').classList.remove('error');
+    document.querySelector('#cloudError').textContent = '';
 };
 
 /******************************************************************************/
 
-var pullAndMergeData = function() {
+const pullAndMergeData = function() {
     if ( typeof self.cloud.onPull === 'function' ) {
         self.cloud.onPull(self.cloud.data, true);
     }
@@ -136,8 +151,8 @@ var pullAndMergeData = function() {
 
 /******************************************************************************/
 
-var openOptions = function() {
-    var input = uDom.nodeFromId('cloudDeviceName');
+const openOptions = function() {
+    const input = uDom.nodeFromId('cloudDeviceName');
     input.value = self.cloud.options.deviceName;
     input.setAttribute('placeholder', self.cloud.options.defaultDeviceName);
     uDom.nodeFromId('cloudOptions').classList.add('show');
@@ -145,56 +160,42 @@ var openOptions = function() {
 
 /******************************************************************************/
 
-var closeOptions = function(ev) {
-    var root = uDom.nodeFromId('cloudOptions');
-    if ( ev.target !== root ) {
-        return;
-    }
+const closeOptions = function(ev) {
+    const root = uDom.nodeFromId('cloudOptions');
+    if ( ev.target !== root ) { return; }
     root.classList.remove('show');
 };
 
 /******************************************************************************/
 
-var submitOptions = function() {
-    var onOptions = function(options) {
-        if ( options instanceof Object === false ) {
-            return;
-        }
-        self.cloud.options = options;
-    };
-
-    messaging.send(
-        'cloudWidget',
-        {
-            what: 'cloudSetOptions',
-            options: {
-                deviceName: uDom.nodeFromId('cloudDeviceName').value
-            }
-        },
-        onOptions
-    );
+const submitOptions = async function() {
     uDom.nodeFromId('cloudOptions').classList.remove('show');
+
+    const options = await vAPI.messaging.send('cloudWidget', {
+        what: 'cloudSetOptions',
+        options: {
+            deviceName: uDom.nodeFromId('cloudDeviceName').value
+        },
+    });
+    if ( options instanceof Object ) {
+        self.cloud.options = options;
+    }
 };
 
 /******************************************************************************/
 
-var onInitialize = function(options) {
-    if ( typeof options !== 'object' || options === null ) {
-        return;
-    }
-
-    if ( !options.enabled ) {
-        return;
-    }
+const onInitialize = function(options) {
+    if ( options instanceof Object === false ) { return; }
+    if ( options.enabled !== true ) { return; }
     self.cloud.options = options;
 
-    var xhr = new XMLHttpRequest();
+    const xhr = new XMLHttpRequest();
     xhr.open('GET', 'cloud-ui.html', true);
     xhr.overrideMimeType('text/html;charset=utf-8');
     xhr.responseType = 'text';
     xhr.onload = function() {
         this.onload = null;
-        var parser = new DOMParser(),
+        const parser = new DOMParser(),
             parsed = parser.parseFromString(this.responseText, 'text/html'),
             fromParent = parsed.body;
         while ( fromParent.firstElementChild !== null ) {
@@ -203,27 +204,34 @@ var onInitialize = function(options) {
             );
         }
 
+        faIconsInit(widget);
+
         vAPI.i18n.render(widget);
         widget.classList.remove('hide');
 
-        uDom('#cloudPush').on('click', pushData);
+        uDom('#cloudPush').on('click', ( ) => { pushData(); });
         uDom('#cloudPull').on('click', pullData);
         uDom('#cloudPullAndMerge').on('click', pullAndMergeData);
         uDom('#cloudCog').on('click', openOptions);
         uDom('#cloudOptions').on('click', closeOptions);
-        uDom('#cloudOptionsSubmit').on('click', submitOptions);
-        
-        // Patch 2018-01-05: Must not assume this XHR will always be faster
-        // than messaging
-        fetchCloudData();
+        uDom('#cloudOptionsSubmit').on('click', ( ) => { submitOptions(); });
+
+        fetchCloudData().then(result => {
+            if ( typeof result !== 'string' ) { return; }
+            document.getElementById('cloudPush').classList.add('error');
+            document.querySelector('#cloudError').textContent = result;
+        });
+        fetchStorageUsed();
     };
     xhr.send();
 };
 
-messaging.send('cloudWidget', { what: 'cloudGetOptions' }, onInitialize);
+vAPI.messaging.send('cloudWidget', {
+    what: 'cloudGetOptions',
+}).then(options => {
+    onInitialize(options);
+});
 
 /******************************************************************************/
-
-// https://www.youtube.com/watch?v=aQFp67VoiDA
 
 })();

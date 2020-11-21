@@ -11,6 +11,18 @@
     "message": "uBlock₀ — Dashboard",
     "description": "English: uBlock₀ — Dashboard"
   },
+  "dashboardUnsavedWarning": {
+    "message": "Attenzione! Ci sono delle modifiche non ancora salvate",
+    "description": "A warning in the dashboard when navigating away from unsaved changes"
+  },
+  "dashboardUnsavedWarningStay": {
+    "message": "Attendi",
+    "description": "Label for button to prevent navigating away from unsaved changes"
+  },
+  "dashboardUnsavedWarningIgnore": {
+    "message": "Ignora",
+    "description": "Label for button to ignore unsaved changes"
+  },
   "settingsPageName": {
     "message": "Opzioni",
     "description": "appears as tab name in dashboard"
@@ -52,8 +64,8 @@
     "description": "Title for the advanced settings page"
   },
   "popupPowerSwitchInfo": {
-    "message": "Click: disabilita\/abilita uBlock₀ per questo sito.\n\nCtrl+click: disabilita uBlock₀ solo per questa pagina.",
-    "description": "English: Click: disable\/enable uBlock₀ for this site.\n\nCtrl+click: disable uBlock₀ only on this page."
+    "message": "Click: disabilita/abilita uBlock₀ per questo sito.\n\nCtrl+click: disabilita uBlock₀ solo per questa pagina.",
+    "description": "English: Click: disable/enable uBlock₀ for this site.\n\nCtrl+click: disable uBlock₀ only on this page."
   },
   "popupPowerSwitchInfo1": {
     "message": "Click per disabilitare uBlock₀ per questo sito.\n\nCtrl+click per disabilitare uBlock₀ solo su questa pagina.",
@@ -73,7 +85,7 @@
   },
   "popupBlockedStats": {
     "message": "{{count}} o {{percent}}%",
-    "description": "Example: 15 or 13%"
+    "description": "Example: 15 (13%)"
   },
   "popupBlockedSinceInstallPrompt": {
     "message": "dall'installazione",
@@ -82,6 +94,18 @@
   "popupOr": {
     "message": "o",
     "description": "English: or"
+  },
+  "popupBlockedOnThisPage_v2": {
+    "message": "Bloccati su questa pagina",
+    "description": "For the new mobile-friendly popup design"
+  },
+  "popupBlockedSinceInstall_v2": {
+    "message": "Bloccati dall'installazione",
+    "description": "For the new mobile-friendly popup design"
+  },
+  "popupDomainsConnected_v2": {
+    "message": "Domini contattati",
+    "description": "For the new mobile-friendly popup design"
   },
   "popupTipDashboard": {
     "message": "Apri la dashboard",
@@ -100,7 +124,7 @@
     "description": "Tooltip used for the logger icon in the panel"
   },
   "popupTipNoPopups": {
-    "message": "Disabilita\/abilita il blocco di tutti i popup per questo sito",
+    "message": "Disabilita/abilita il blocco di tutti i popup per questo sito",
     "description": "Tooltip for the no-popups per-site switch"
   },
   "popupTipNoPopups1": {
@@ -112,7 +136,7 @@
     "description": "Tooltip for the no-popups per-site switch"
   },
   "popupTipNoLargeMedia": {
-    "message": "Abilita\/disabilita il blocco di elementi multimediali di grandi dimensioni per questo sito",
+    "message": "Abilita/disabilita il blocco di elementi multimediali di grandi dimensioni per questo sito",
     "description": "Tooltip for the no-large-media per-site switch"
   },
   "popupTipNoLargeMedia1": {
@@ -124,7 +148,7 @@
     "description": "Tooltip for the no-large-media per-site switch"
   },
   "popupTipNoCosmeticFiltering": {
-    "message": "Disabilita\/abilita filtraggio cosmetico per questo sito",
+    "message": "Disabilita/abilita filtraggio cosmetico per questo sito",
     "description": "Tooltip for the no-cosmetic-filtering per-site switch"
   },
   "popupTipNoCosmeticFiltering1": {
@@ -155,6 +179,34 @@
     "message": "Clicca per non disabilitare più JavaScript su questo sito",
     "description": "Tooltip for the no-scripting per-site switch"
   },
+  "popupNoPopups_v2": {
+    "message": "Finestre pop-up",
+    "description": "Caption for the no-popups per-site switch"
+  },
+  "popupNoLargeMedia_v2": {
+    "message": "Elementi multimediali di grandi dimensioni",
+    "description": "Caption for the no-large-media per-site switch"
+  },
+  "popupNoCosmeticFiltering_v2": {
+    "message": "Filtraggio cosmetico",
+    "description": "Caption for the no-cosmetic-filtering per-site switch"
+  },
+  "popupNoRemoteFonts_v2": {
+    "message": "Tipi di carattere remoti",
+    "description": "Caption for the no-remote-fonts per-site switch"
+  },
+  "popupNoScripting_v2": {
+    "message": "JavaScript",
+    "description": "Caption for the no-scripting per-site switch"
+  },
+  "popupMoreButton_v2": {
+    "message": "Altro",
+    "description": "Label to be used to show popup panel sections"
+  },
+  "popupLessButton_v2": {
+    "message": "Meno",
+    "description": "Label to be used to hide popup panel sections"
+  },
   "popupTipGlobalRules": {
     "message": "Regole globali: questa colonna è per le regole che si applicano a tutti i siti.",
     "description": "Tooltip when hovering the top-most cell of the global-rules column."
@@ -184,7 +236,7 @@
     "description": ""
   },
   "popup3pPassiveRulePrompt": {
-    "message": "Immagini\/CSS di terze parti",
+    "message": "Immagini/CSS di terze parti",
     "description": ""
   },
   "popupInlineScriptRulePrompt": {
@@ -210,6 +262,10 @@
   "popupHitDomainCount": {
     "message": "{{count}} di {{total}}",
     "description": "appears in popup"
+  },
+  "popupVersion": {
+    "message": "Versione",
+    "description": "Example of use: Version 1.26.4"
   },
   "pickerCreate": {
     "message": "Crea",
@@ -240,8 +296,8 @@
     "description": "English: Click, Ctrl-click"
   },
   "pickerContextMenuEntry": {
-    "message": "Blocca elemento",
-    "description": "English: Block element"
+    "message": "Blocca elemento...",
+    "description": "An entry in the browser's contextual menu"
   },
   "settingsCollapseBlockedPrompt": {
     "message": "Nascondi lo spazio riservato agli elementi bloccati",
@@ -268,7 +324,7 @@
     "description": ""
   },
   "settingsAdvancedUserPrompt": {
-    "message": "Sono un utente avanzato (<a href='https:\/\/github.com\/gorhill\/uBlock\/wiki\/Advanced-user-features'>Lettura obbligatoria<\/a>)",
+    "message": "Sono un utente avanzato (<a href='https://github.com/gorhill/uBlock/wiki/Advanced-user-features'>Lettura obbligatoria</a>)",
     "description": ""
   },
   "settingsAdvancedUserSettings": {
@@ -313,11 +369,7 @@
   },
   "settingsNoCSPReportsPrompt": {
     "message": "Blocca i report CSP",
-    "description": "background information: https:\/\/github.com\/gorhill\/uBlock\/issues\/3150"
-  },
-  "settingsStorageUsed": {
-    "message": "Spazio utilizzato: {{value}} byte",
-    "description": "English: Storage used: {{}} bytes"
+    "description": "background information: https://github.com/gorhill/uBlock/issues/3150"
   },
   "settingsLastRestorePrompt": {
     "message": "Ultimo ripristino:",
@@ -352,7 +404,7 @@
     "description": "English: Parse and enforce Adblock+ element hiding filters."
   },
   "3pParseAllABPHideFiltersInfo": {
-    "message": "<p>Questa opzione abilita i filtri di <a href=\"https:\/\/adblockplus.org\/en\/faq_internal#elemhide\">Adblock Plus-compatible &ldquo;element hiding&rdquo; filters<\/a>. Questi filtri sono essenzialmente estetici, servono a nascondere elementi fastidiosi in una pagina web , e che non possono essere bloccati normalmente.<\/p><p>Questa funziona aumenta l'uso della memoria da parte di <i>uBlock₀<\/i>.<\/p>",
+    "message": "<p>Questa opzione abilita i filtri di <a href=\"https://adblockplus.org/en/faq_internal#elemhide\">Adblock Plus-compatible &ldquo;element hiding&rdquo; filters</a>. Questi filtri sono essenzialmente estetici, servono a nascondere elementi fastidiosi in una pagina web, e che non possono essere bloccati normalmente.</p><p>Questa funzione aumenta l'uso della memoria da parte di <i>uBlock</i>.</p>",
     "description": "Describes the purpose of the 'Parse and enforce cosmetic filters' feature."
   },
   "3pIgnoreGenericCosmeticFilters": {
@@ -415,6 +467,10 @@
     "message": "Obsoleto.",
     "description": "used as a tooltip for the out-of-date icon beside a list"
   },
+  "3pViewContent": {
+    "message": "visualizza contenuto",
+    "description": "used as a tooltip for eye icon beside a list"
+  },
   "3pLastUpdate": {
     "message": "Ultimo aggiornamento: {{ago}}.\nClicca per forzare l'aggiornamento.",
     "description": "used as a tooltip for the clock icon beside a list"
@@ -428,7 +484,7 @@
     "description": "used as a tooltip for error icon beside a list"
   },
   "1pFormatHint": {
-    "message": "Un filtro per ogni riga. Un filtro può essere un hostname, o un filtro compatibile con Adblock Plus. Ogni riga che comincia con <code>!<\/code> verrà ignorata.",
+    "message": "Un filtro per ogni riga. Un filtro può essere un hostname, o un filtro compatibile con Adblock Plus. Ogni riga che comincia con <code>!</code> verrà ignorata.",
     "description": "Short information about how to create custom filters"
   },
   "1pImport": {
@@ -492,12 +548,28 @@
     "description": "English: List of your dynamic filtering rules."
   },
   "rulesFormatHint": {
-    "message": "Sintassi per le regole: <code>sorgente destinazione tipo azione<\/code> (<a href='https:\/\/github.com\/gorhill\/uBlock\/wiki\/Dynamic-filtering:-rule-syntax'>documentazione completa<\/a>).",
+    "message": "Sintassi per le regole: <code>sorgente destinazione tipo azione</code> (<a href='https://github.com/gorhill/uBlock/wiki/Dynamic-filtering:-rule-syntax'>documentazione completa</a>).",
     "description": "English: dynamic rule syntax and full documentation."
+  },
+  "rulesSort": {
+    "message": "Ordina:",
+    "description": "English: label for sort option."
+  },
+  "rulesSortByType": {
+    "message": "Tipo regola",
+    "description": "English: a sort option for list of rules."
+  },
+  "rulesSortBySource": {
+    "message": "Fonte",
+    "description": "English: a sort option for list of rules."
+  },
+  "rulesSortByDestination": {
+    "message": "Destinazione",
+    "description": "English: a sort option for list of rules."
   },
   "whitelistPrompt": {
     "message": "Lista dei siti dove uBlock è disattivato. Un sito per ogni riga. Le voci non valide verranno silenziosamente ignorate.",
-    "description": "English: An overview of the content of the dashboard's Whitelist pane."
+    "description": "The name of the trusted sites pane."
   },
   "whitelistImport": {
     "message": "Importa e aggiungi",
@@ -508,8 +580,8 @@
     "description": "English: Export"
   },
   "whitelistExportFilename": {
-    "message": "ublock-whitelist_{{datetime}}.txt",
-    "description": "English: my-ublock-whitelist_{{datetime}}.txt"
+    "message": "ublock-lista-bianca_{{datetime}}.txt",
+    "description": "The default filename to use for import/export purpose"
   },
   "whitelistApply": {
     "message": "Salva i cambiamenti",
@@ -556,31 +628,31 @@
     "description": "Tooltip for the popup panel button in the logger page"
   },
   "loggerInfoTip": {
-    "message": "uBlock Wiki di Origine: il logger",
+    "message": "uBlock Origin Wiki: Registro",
     "description": "Tooltip for the top-right info label in the logger page"
   },
   "loggerClearTip": {
-    "message": "Cancella logger",
+    "message": "Pulisci il registro",
     "description": "Tooltip for the eraser in the logger page; used to blank the content of the logger"
   },
   "loggerPauseTip": {
-    "message": "Pausa logger (elimina tutti i dati in arrivo)",
+    "message": "Metti in pausa il registro (scarta tutti i dati in arrivo)",
     "description": "Tooltip for the pause button in the logger page"
   },
   "loggerUnpauseTip": {
-    "message": "Riattiva logger",
+    "message": "Riattiva il registro",
     "description": "Tooltip for the play button in the logger page"
   },
   "loggerRowFiltererButtonTip": {
-    "message": "Attiva \/ disattiva il filtro del logger",
+    "message": "Attiva o disattiva il filtraggio del registro",
     "description": "Tooltip for the row filterer button in the logger page"
   },
   "logFilterPrompt": {
-    "message": "filtra voci del registro",
+    "message": "filtra il contenuto del registro",
     "description": "Placeholder string for logger output filtering input field"
   },
   "loggerRowFiltererBuiltinTip": {
-    "message": "Opzioni di filtraggio del logger",
+    "message": "Opzioni di filtraggio del registro",
     "description": "Tooltip for the button to bring up logger output filtering options"
   },
   "loggerRowFiltererBuiltinNot": {
@@ -596,7 +668,11 @@
     "description": "A keyword in the built-in row filtering expression"
   },
   "loggerRowFiltererBuiltinAllowed": {
-    "message": "abilitato",
+    "message": "permesso",
+    "description": "A keyword in the built-in row filtering expression"
+  },
+  "loggerRowFiltererBuiltinModified": {
+    "message": "modificato",
     "description": "A keyword in the built-in row filtering expression"
   },
   "loggerRowFiltererBuiltin1p": {
@@ -696,15 +772,15 @@
     "description": "Used in the static filtering wizard"
   },
   "loggerStaticFilteringFinderSentence1": {
-    "message": "Filtro statico <code>{{filter}}<\/code> trovato in:",
+    "message": "Filtro statico <code>{{filter}}</code> trovato in:",
     "description": "Below this sentence, the filter list(s) in which the filter was found"
   },
   "loggerStaticFilteringFinderSentence2": {
-    "message": "Non è stato possibile trovare il filtro statico <code>{{filter}}<\/code> in nessun filtro di terze parti attualmente abilitato",
+    "message": "Non è stato possibile trovare il filtro statico <code>{{filter}}</code> in nessun filtro di terze parti attualmente abilitato",
     "description": "Message to show when a filter cannot be found in any filter lists"
   },
   "loggerSettingDiscardPrompt": {
-    "message": "Le voci del logger che non soddisfano tutte e tre le condizioni seguenti verranno automaticamente scartate:",
+    "message": "Le voci del registro che non soddisfano tutte e tre le condizioni seguenti verranno automaticamente scartate:",
     "description": "Logger setting: A sentence to describe the purpose of the settings below"
   },
   "loggerSettingPerEntryMaxAge": {
@@ -720,7 +796,7 @@
     "description": "A logger setting"
   },
   "loggerSettingPerEntryLineCount": {
-    "message": "Utilizza {{input}} righe per voce in modalità espansa verticalmente",
+    "message": "Utilizza {{input}} righe per ogni voce con la modalità espansione verticale",
     "description": "A logger setting"
   },
   "loggerSettingHideColumnsPrompt": {
@@ -732,7 +808,7 @@
     "description": "A label for the time column"
   },
   "loggerSettingHideColumnFilter": {
-    "message": "{{input}} Filtro\/regola",
+    "message": "{{input}} Filtro/regola",
     "description": "A label for the filter or rule column"
   },
   "loggerSettingHideColumnContext": {
@@ -748,7 +824,7 @@
     "description": "Label for radio-button to pick export format"
   },
   "loggerExportFormatTable": {
-    "message": "Tavola",
+    "message": "Tabella",
     "description": "Label for radio-button to pick export format"
   },
   "loggerExportEncodePlain": {
@@ -782,6 +858,18 @@
   "aboutContributors": {
     "message": "Collaboratori",
     "description": "English: Contributors"
+  },
+  "aboutSourceCode": {
+    "message": "Codice sorgente",
+    "description": "Link text to source code repo"
+  },
+  "aboutTranslations": {
+    "message": "Traduzioni",
+    "description": "Link text to translations repo"
+  },
+  "aboutFilterLists": {
+    "message": "Liste filtri",
+    "description": "Link text to uBO's own filter lists repo"
   },
   "aboutDependencies": {
     "message": "Dipendenze esterne (GPLv3-compatibili):",
@@ -821,7 +909,11 @@
   },
   "subscriberConfirm": {
     "message": "uBlock₀: Aggiungere il seguente URL alla tua lista dei filtri personalizzata?\n\nTitolo: \"{{title}}\"\nURL: {{url}}",
-    "description": "English: The message seen by the user to confirm subscription to a ABP filter list"
+    "description": "No longer used"
+  },
+  "subscribeButton": {
+    "message": "Abbonati",
+    "description": "For the button used to subscribe to a filter list"
   },
   "elapsedOneMinuteAgo": {
     "message": "un minuto fa",
@@ -849,11 +941,11 @@
   },
   "showDashboardButton": {
     "message": "Visualizza Dashboard",
-    "description": "Firefox\/Fennec-specific: Show Dashboard"
+    "description": "Firefox/Fennec-specific: Show Dashboard"
   },
   "showNetworkLogButton": {
     "message": "Visualizza registro richieste di rete",
-    "description": "Firefox\/Fennec-specific: Show Logger"
+    "description": "Firefox/Fennec-specific: Show Logger"
   },
   "fennecMenuItemBlockingOff": {
     "message": "disattivato",
@@ -861,15 +953,15 @@
   },
   "docblockedPrompt1": {
     "message": "uBlock₀ ha impedito alla seguente pagina di caricarsi:",
-    "description": "English: uBlock₀ has prevented the following page from loading:"
+    "description": "Used in the strict-blocking page"
   },
   "docblockedPrompt2": {
     "message": "A causa del seguente filtro",
-    "description": "English: Because of the following filter"
+    "description": "Used in the strict-blocking page"
   },
   "docblockedNoParamsPrompt": {
     "message": "senza parametri",
-    "description": "label to be used for the parameter-less URL: https:\/\/cloud.githubusercontent.com\/assets\/585534\/9832014\/bfb1b8f0-593b-11e5-8a27-fba472a5529a.png"
+    "description": "label to be used for the parameter-less URL: https://cloud.githubusercontent.com/assets/585534/9832014/bfb1b8f0-593b-11e5-8a27-fba472a5529a.png"
   },
   "docblockedFoundIn": {
     "message": "Trovato in:",
@@ -944,12 +1036,40 @@
     "description": "Placeholder string for input field used to capture a keyboard shortcut"
   },
   "genericMergeViewScrollLock": {
-    "message": "Toggle scorrimento bloccato",
+    "message": "Attiva o disattiva il blocco dello scorrimento",
     "description": "Tooltip for the button used to lock scrolling between the views in the 'My rules' pane"
   },
   "genericCopyToClipboard": {
     "message": "Copia negli appunti",
     "description": "Label for buttons used to copy something to the clipboard"
+  },
+  "toggleBlockingProfile": {
+    "message": "Attiva / disattiva il profilo di blocco",
+    "description": "Label for keyboard shortcut used to toggle blocking profile"
+  },
+  "relaxBlockingMode": {
+    "message": "Rilassa la modalità di blocco",
+    "description": "Label for keyboard shortcut used to relax blocking mode (meant to replace 'Toggle blocking profile')"
+  },
+  "storageUsed": {
+    "message": "Spazio utilizzato: {{value}} {{unit}}",
+    "description": " In Setting pane, renders as (example): Storage used: 13.2 MB"
+  },
+  "KB": {
+    "message": "KB",
+    "description": "short for 'kilobytes'"
+  },
+  "MB": {
+    "message": "MB",
+    "description": "short for 'megabytes'"
+  },
+  "GB": {
+    "message": "GB",
+    "description": "short for 'gigabytes'"
+  },
+  "clickToLoad": {
+    "message": "Clicca per caricare",
+    "description": "Message used in frame placeholders"
   },
   "dummy": {
     "message": "This entry must be the last one",

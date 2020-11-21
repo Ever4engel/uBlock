@@ -25,26 +25,42 @@
 
 /******************************************************************************/
 
-(function() {
+(( ) => {
+
+/******************************************************************************/
+
+const reComment = /^\s*#\s*/;
+
+const directiveFromLine = function(line) {
+    const match = reComment.exec(line);
+    return match === null
+        ? line.trim()
+        : line.slice(match.index + match[0].length).trim();
+};
 
 /******************************************************************************/
 
 CodeMirror.defineMode("ubo-whitelist-directives", function() {
-    var reComment = /^\s*#/,
-        reRegex = /^\/.+\/$/;
+    const reRegex = /^\/.+\/$/;
 
     return {
         token: function(stream) {
-            var line = stream.string.trim();
+            const line = stream.string.trim();
             stream.skipToEnd();
             if ( reBadHostname === undefined ) {
                 return null;
             }
             if ( reComment.test(line) ) {
-                return 'comment';
+                return whitelistDefaultSet.has(directiveFromLine(line))
+                    ? 'keyword comment'
+                    : 'comment';
             }
             if ( line.indexOf('/') === -1 ) {
-                return reBadHostname.test(line) ? 'error' : null;
+                if ( reBadHostname.test(line) ) { return 'error'; }
+                if ( whitelistDefaultSet.has(line.trim()) ) {
+                    return 'keyword';
+                }
+                return null;
             }
             if ( reRegex.test(line) ) {
                 try {
@@ -59,22 +75,24 @@ CodeMirror.defineMode("ubo-whitelist-directives", function() {
     };
 });
 
-var reBadHostname,
-    reHostnameExtractor;
+let reBadHostname;
+let reHostnameExtractor;
+let whitelistDefaultSet = new Set();
 
 /******************************************************************************/
 
-var messaging = vAPI.messaging,
-    cachedWhitelist = '',
-    noopFunc = function(){};
+const messaging = vAPI.messaging;
+const noopFunc = function(){};
 
-var cmEditor = new CodeMirror(
+let cachedWhitelist = '';
+
+const cmEditor = new CodeMirror(
     document.getElementById('whitelist'),
     {
         autofocus: true,
         lineNumbers: true,
         lineWrapping: true,
-        styleActiveLine: true
+        styleActiveLine: true,
     }
 );
 
@@ -82,11 +100,22 @@ uBlockDashboard.patchCodeMirrorEditor(cmEditor);
 
 /******************************************************************************/
 
-var whitelistChanged = function() {
-    var whitelistElem = uDom.nodeFromId('whitelist');
-    var bad = whitelistElem.querySelector('.cm-error') !== null;
-    var changedWhitelist = cmEditor.getValue().trim();
-    var changed = changedWhitelist !== cachedWhitelist;
+const getEditorText = function() {
+    let text = cmEditor.getValue().replace(/\s+$/, '');
+    return text === '' ? text : text + '\n';
+};
+
+const setEditorText = function(text) {
+    cmEditor.setValue(text.replace(/\s+$/, '') + '\n');
+};
+
+/******************************************************************************/
+
+const whitelistChanged = function() {
+    const whitelistElem = uDom.nodeFromId('whitelist');
+    const bad = whitelistElem.querySelector('.cm-error') !== null;
+    const changedWhitelist = getEditorText().trim();
+    const changed = changedWhitelist !== cachedWhitelist;
     uDom.nodeFromId('whitelistApply').disabled = !changed || bad;
     uDom.nodeFromId('whitelistRevert').disabled = !changed;
     CodeMirror.commands.save = changed && !bad ? applyChanges : noopFunc;
@@ -96,45 +125,64 @@ cmEditor.on('changes', whitelistChanged);
 
 /******************************************************************************/
 
-var renderWhitelist = function() {
-    var onRead = function(details) {
-        var first = reBadHostname === undefined;
-        if ( first ) {
-            reBadHostname = new RegExp(details.reBadHostname);
-            reHostnameExtractor = new RegExp(details.reHostnameExtractor);
+const renderWhitelist = async function() {
+    const details = await messaging.send('dashboard', {
+        what: 'getWhitelist',
+    });
+
+    const first = reBadHostname === undefined;
+    if ( first ) {
+        reBadHostname = new RegExp(details.reBadHostname);
+        reHostnameExtractor = new RegExp(details.reHostnameExtractor);
+        whitelistDefaultSet = new Set(details.whitelistDefault);
+    }
+    const toAdd = new Set(whitelistDefaultSet);
+    for ( const line of details.whitelist ) {
+        const directive = directiveFromLine(line);
+        if ( whitelistDefaultSet.has(directive) === false ) { continue; }
+        toAdd.delete(directive);
+        if ( toAdd.size === 0 ) { break; }
+    }
+    if ( toAdd.size !== 0 ) {
+        details.whitelist.push(...Array.from(toAdd).map(a => `# ${a}`));
+    }
+    details.whitelist.sort((a, b) => {
+        const ad = directiveFromLine(a);
+        const bd = directiveFromLine(b);
+        const abuiltin = whitelistDefaultSet.has(ad);
+        if ( abuiltin !== whitelistDefaultSet.has(bd) ) {
+            return abuiltin ? -1 : 1;
         }
-        cachedWhitelist = details.whitelist.trim();
-        cmEditor.setValue(cachedWhitelist + '\n');
-        if ( first ) {
-            cmEditor.clearHistory();
-        }
-    };
-    messaging.send('dashboard', { what: 'getWhitelist' }, onRead);
+        return ad.localeCompare(bd);
+    });
+    const whitelistStr = details.whitelist.join('\n').trim();
+    cachedWhitelist = whitelistStr;
+    setEditorText(whitelistStr);
+    if ( first ) {
+        cmEditor.clearHistory();
+    }
 };
 
 /******************************************************************************/
 
-var handleImportFilePicker = function() {
-    var fileReaderOnLoadHandler = function() {
-        cmEditor.setValue(
-            [
-                cmEditor.getValue().trim(),
-                this.result.trim()
-            ].join('\n').trim()
-        );
-    };
-    var file = this.files[0];
+const handleImportFilePicker = function() {
+    const file = this.files[0];
     if ( file === undefined || file.name === '' ) { return; }
     if ( file.type.indexOf('text') !== 0 ) { return; }
-    var fr = new FileReader();
-    fr.onload = fileReaderOnLoadHandler;
+    const fr = new FileReader();
+    fr.onload = ev => {
+        if ( ev.type !== 'load' ) { return; }
+        setEditorText(
+            [ getEditorText().trim(), fr.result.trim() ].join('\n').trim()
+        );
+    };
     fr.readAsText(file);
 };
 
 /******************************************************************************/
 
-var startImportFilePicker = function() {
-    var input = document.getElementById('importFilePicker');
+const startImportFilePicker = function() {
+    const input = document.getElementById('importFilePicker');
     // Reset to empty string, this will ensure an change event is properly
     // triggered if the user pick a file, even if it is the same as the last
     // one picked.
@@ -144,50 +192,46 @@ var startImportFilePicker = function() {
 
 /******************************************************************************/
 
-var exportWhitelistToFile = function() {
-    var val = cmEditor.getValue().trim();
+const exportWhitelistToFile = function() {
+    const val = getEditorText();
     if ( val === '' ) { return; }
-    var filename = vAPI.i18n('whitelistExportFilename')
-        .replace('{{datetime}}', uBlockDashboard.dateNowToSensibleString())
-        .replace(/ +/g, '_');
+    const filename =
+        vAPI.i18n('whitelistExportFilename')
+            .replace('{{datetime}}', uBlockDashboard.dateNowToSensibleString())
+            .replace(/ +/g, '_');
     vAPI.download({
-        'url': 'data:text/plain;charset=utf-8,' + encodeURIComponent(val + '\n'),
+        'url': `data:text/plain;charset=utf-8,${encodeURIComponent(val + '\n')}`,
         'filename': filename
     });
 };
 
 /******************************************************************************/
 
-var applyChanges = function() {
-    cachedWhitelist = cmEditor.getValue().trim();
-    messaging.send(
-        'dashboard',
-        {
-            what: 'setWhitelist',
-            whitelist: cachedWhitelist
-        },
-        renderWhitelist
-    );
+const applyChanges = async function() {
+    cachedWhitelist = getEditorText().trim();
+    await messaging.send('dashboard', {
+        what: 'setWhitelist',
+        whitelist: cachedWhitelist,
+    });
+    renderWhitelist();
 };
 
-var revertChanges = function() {
-    var content = cachedWhitelist;
-    if ( content !== '' ) { content += '\n'; }
-    cmEditor.setValue(content);
+const revertChanges = function() {
+    setEditorText(cachedWhitelist);
 };
 
 /******************************************************************************/
 
-var getCloudData = function() {
-    return cmEditor.getValue();
+const getCloudData = function() {
+    return getEditorText();
 };
 
-var setCloudData = function(data, append) {
+const setCloudData = function(data, append) {
     if ( typeof data !== 'string' ) { return; }
     if ( append ) {
-        data = uBlockDashboard.mergeNewLines(cmEditor.getValue().trim(), data);
+        data = uBlockDashboard.mergeNewLines(getEditorText().trim(), data);
     }
-    cmEditor.setValue(data.trim() + '\n');
+    setEditorText(data.trim());
 };
 
 self.cloud.onPush = getCloudData;
@@ -195,10 +239,16 @@ self.cloud.onPull = setCloudData;
 
 /******************************************************************************/
 
+self.hasUnsavedData = function() {
+    return getEditorText().trim() !== cachedWhitelist;
+};
+
+/******************************************************************************/
+
 uDom('#importWhitelistFromFile').on('click', startImportFilePicker);
 uDom('#importFilePicker').on('change', handleImportFilePicker);
 uDom('#exportWhitelistToFile').on('click', exportWhitelistToFile);
-uDom('#whitelistApply').on('click', applyChanges);
+uDom('#whitelistApply').on('click', ( ) => { applyChanges(); });
 uDom('#whitelistRevert').on('click', revertChanges);
 
 renderWhitelist();

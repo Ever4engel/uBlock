@@ -1,5 +1,5 @@
 {
-  "author": "All uBlock Origin contributors",
+  "author": "Raymond Hill & contributors",
   "background": {
     "page": "background.html"
   },
@@ -9,7 +9,7 @@
       "32": "img/icon_32.png"
     },
     "default_title": "uBlock Origin",
-    "default_popup": "popup.html"
+    "default_popup": "popup-fenix.html"
   },
   "commands": {
     "launch-element-zapper": {
@@ -20,6 +20,12 @@
     },
     "launch-logger": {
       "description": "__MSG_popupTipLog__"
+    },
+    "open-dashboard": {
+      "description": "__MSG_popupTipDashboard__"
+    },
+    "relax-blocking-mode": {
+      "description": "__MSG_relaxBlockingMode__"
     }
   },
   "content_scripts": [
@@ -33,13 +39,18 @@
         "/js/vapi-client.js",
         "/js/contentscript.js"
       ],
-      "run_at": "document_start",
-      "all_frames": true
+      "all_frames": true,
+      "match_about_blank": true,
+      "run_at": "document_start"
     },
     {
       "matches": [
-        "http://*/*",
-        "https://*/*"
+        "https://easylist.to/*",
+        "https://*.fanboy.co.nz/*",
+        "https://filterlists.com/*",
+        "https://forums.lanik.us/*",
+        "https://github.com/*",
+        "https://*.github.io/*"
       ],
       "js": [
         "/js/scriptlets/subscriber.js"
@@ -48,6 +59,7 @@
       "all_frames": false
     }
   ],
+  "content_security_policy": "script-src 'self'; object-src 'self'",
   "default_locale": "en",
   "description": "__MSG_extShortDesc__",
   "icons": {

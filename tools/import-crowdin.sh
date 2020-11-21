@@ -6,19 +6,21 @@ echo "*** uBlock: Importing from Crowdin archive"
 
 SRC=~/Downloads/crowdin
 rm -r $SRC
-unzip -q ~/Downloads/ublock.zip -d $SRC
+unzip -q ~/Downloads/uBlock\ \(translations\).zip -d $SRC
 
 DES=./src/_locales
 cp $SRC/ar/messages.json    $DES/ar/messages.json
 cp $SRC/az/messages.json    $DES/az/messages.json
 cp $SRC/bg/messages.json    $DES/bg/messages.json
 cp $SRC/bn/messages.json    $DES/bn/messages.json
+cp $SRC/bs/messages.json    $DES/bs/messages.json
 cp $SRC/ca/messages.json    $DES/ca/messages.json
 cp $SRC/cs/messages.json    $DES/cs/messages.json
 cp $SRC/cv/messages.json    $DES/cv/messages.json
 cp $SRC/da/messages.json    $DES/da/messages.json
 cp $SRC/de/messages.json    $DES/de/messages.json
 cp $SRC/el/messages.json    $DES/el/messages.json
+cp $SRC/en-GB/messages.json $DES/en_GB/messages.json
 cp $SRC/eo/messages.json    $DES/eo/messages.json
 cp $SRC/es-ES/messages.json $DES/es/messages.json
 cp $SRC/et/messages.json    $DES/et/messages.json
@@ -33,6 +35,7 @@ cp $SRC/he/messages.json    $DES/he/messages.json
 cp $SRC/hi/messages.json    $DES/hi/messages.json
 cp $SRC/hr/messages.json    $DES/hr/messages.json
 cp $SRC/hu/messages.json    $DES/hu/messages.json
+cp $SRC/hy-AM/messages.json $DES/hy/messages.json
 cp $SRC/id/messages.json    $DES/id/messages.json
 cp $SRC/it/messages.json    $DES/it/messages.json
 cp $SRC/ja/messages.json    $DES/ja/messages.json
@@ -47,6 +50,7 @@ cp $SRC/mr/messages.json    $DES/mr/messages.json
 cp $SRC/ms/messages.json    $DES/ms/messages.json
 cp $SRC/nb/messages.json    $DES/nb/messages.json
 cp $SRC/nl/messages.json    $DES/nl/messages.json
+cp $SRC/oc/messages.json    $DES/oc/messages.json
 cp $SRC/pl/messages.json    $DES/pl/messages.json
 cp $SRC/pt-BR/messages.json $DES/pt_BR/messages.json
 cp $SRC/pt-PT/messages.json $DES/pt_PT/messages.json
@@ -80,12 +84,14 @@ DES=./dist/description
 cp $SRC/ar/description.txt    $DES/description-ar.txt
 cp $SRC/bg/description.txt    $DES/description-bg.txt
 cp $SRC/bn/description.txt    $DES/description-bn.txt
+cp $SRC/bs/description.txt    $DES/description-bs.txt
 cp $SRC/ca/description.txt    $DES/description-ca.txt
 cp $SRC/cs/description.txt    $DES/description-cs.txt
 cp $SRC/cv/description.txt    $DES/description-cv.txt
 cp $SRC/da/description.txt    $DES/description-da.txt
 cp $SRC/de/description.txt    $DES/description-de.txt
 cp $SRC/el/description.txt    $DES/description-el.txt
+cp $SRC/en-GB/description.txt $DES/description-en_GB.txt
 cp $SRC/eo/description.txt    $DES/description-eo.txt
 cp $SRC/es-ES/description.txt $DES/description-es.txt
 cp $SRC/et/description.txt    $DES/description-et.txt
@@ -100,6 +106,7 @@ cp $SRC/he/description.txt    $DES/description-he.txt
 cp $SRC/hi/description.txt    $DES/description-hi.txt
 cp $SRC/hr/description.txt    $DES/description-hr.txt
 cp $SRC/hu/description.txt    $DES/description-hu.txt
+cp $SRC/hy-AM/description.txt $DES/description-hy.txt
 cp $SRC/id/description.txt    $DES/description-id.txt
 cp $SRC/it/description.txt    $DES/description-it.txt
 cp $SRC/ja/description.txt    $DES/description-ja.txt
@@ -114,6 +121,7 @@ cp $SRC/ms/description.txt    $DES/description-ms.txt
 cp $SRC/mr/description.txt    $DES/description-mr.txt
 cp $SRC/nb/description.txt    $DES/description-nb.txt
 cp $SRC/nl/description.txt    $DES/description-nl.txt
+cp $SRC/oc/description.txt    $DES/description-oc.txt
 cp $SRC/pl/description.txt    $DES/description-pl.txt
 cp $SRC/pt-BR/description.txt $DES/description-pt_BR.txt
 cp $SRC/pt-PT/description.txt $DES/description-pt_PT.txt

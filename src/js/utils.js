@@ -23,114 +23,11 @@
 
 /******************************************************************************/
 
-// A standalone URL tokenizer will allow us to use URL tokens in more than
-// just static filtering engine. This opens the door to optimize other
-// filtering engine parts aside static filtering. This also allows:
-// - Tokenize only on demand.
-// - To potentially avoid tokenizing when same URL is fed to tokenizer.
-//   - Benchmarking shows this to be a common occurrence.
-//
-// https://github.com/gorhill/uBlock/issues/2630
-// Slice input URL into a list of safe-integer token values, instead of a list
-// of substrings. The assumption is that with dealing only with numeric
-// values, less underlying memory allocations, and also as a consequence
-// less work for the garbage collector down the road.
-// Another assumption is that using a numeric-based key value for Map() is
-// more efficient than string-based key value (but that is something I would
-// have to benchmark).
-// Benchmark for string-based tokens vs. safe-integer token values:
-//   https://gorhill.github.io/obj-vs-set-vs-map/tokenize-to-str-vs-to-int.html
-
-µBlock.urlTokenizer = {
-    setURL: function(url) {
-        if ( url !== this._urlIn ) {
-            this._urlIn = url;
-            this._urlOut = url.toLowerCase();
-            this._tokenized = false;
-        }
-        return this._urlOut;
-    },
-
-    // Tokenize on demand.
-    getTokens: function() {
-        if ( this._tokenized === false ) {
-            this._tokenize();
-            this._tokenized = true;
-        }
-        return this._tokens;
-    },
-
-    tokenHashFromString: function(s) {
-        var l = s.length;
-        if ( l === 0 ) { return 0; }
-        if ( l === 1 ) {
-            if ( s === '*' ) { return 63; }
-            if ( s === '.' ) { return 62; }
-        }
-        var vtc = this._validTokenChars,
-            th = vtc[s.charCodeAt(0)];
-        for ( var i = 1; i !== 8 && i !== l; i++ ) {
-            th = th * 64 + vtc[s.charCodeAt(i)];
-        }
-        return th;
-    },
-
-    // https://github.com/chrisaljoudi/uBlock/issues/1118
-    // We limit to a maximum number of tokens.
-
-    _tokenize: function() {
-        var tokens = this._tokens,
-            url = this._urlOut,
-            l = url.length;
-        if ( l === 0 ) { tokens[0] = 0; return; }
-        if ( l > 2048 ) {
-            url = url.slice(0, 2048);
-            l = 2048;
-        }
-        var i = 0, j = 0, v, n, ti, th,
-            vtc = this._validTokenChars;
-        for (;;) {
-            for (;;) {
-                if ( i === l ) { tokens[j] = 0; return; }
-                v = vtc[url.charCodeAt(i++)];
-                if ( v !== 0 ) { break; }
-            }
-            th = v; ti = i - 1; n = 1;
-            for (;;) {
-                if ( i === l ) { break; }
-                v = vtc[url.charCodeAt(i++)];
-                if ( v === 0 ) { break; }
-                if ( n === 8 ) { continue; }
-                th = th * 64 + v;
-                n += 1;
-            }
-            tokens[j++] = th;
-            tokens[j++] = ti;
-        }
-    },
-
-    _urlIn: '',
-    _urlOut: '',
-    _tokenized: false,
-    _tokens: [ 0 ],
-    _validTokenChars: (function() {
-        var vtc = new Uint8Array(128),
-            chars = '0123456789%abcdefghijklmnopqrstuvwxyz',
-            i = chars.length;
-        while ( i-- ) {
-            vtc[chars.charCodeAt(i)] = i + 1;
-        }
-        return vtc;
-    })()
-};
-
-/******************************************************************************/
-
 µBlock.formatCount = function(count) {
     if ( typeof count !== 'number' ) {
         return '';
     }
-    var s = count.toFixed(0);
+    let s = count.toFixed(0);
     if ( count >= 1000 ) {
         if ( count < 10000 ) {
             s = '>' + s.slice(0,1) + 'k';
@@ -152,7 +49,7 @@
 /******************************************************************************/
 
 µBlock.dateNowToSensibleString = function() {
-    var now = new Date(Date.now() - (new Date()).getTimezoneOffset() * 60000);
+    const now = new Date(Date.now() - (new Date()).getTimezoneOffset() * 60000);
     return now.toISOString().replace(/\.\d+Z$/, '')
                             .replace(/:/g, '.')
                             .replace('T', '_');
@@ -160,34 +57,37 @@
 
 /******************************************************************************/
 
-µBlock.LineIterator = function(text, offset) {
-    this.text = text;
-    this.textLen = this.text.length;
-    this.offset = offset || 0;
-};
-
-µBlock.LineIterator.prototype.next = function(offset) {
-    if ( offset !== undefined ) {
-        this.offset += offset;
+µBlock.LineIterator = class {
+    constructor(text, offset) {
+        this.text = text;
+        this.textLen = this.text.length;
+        this.offset = offset || 0;
     }
-    var lineEnd = this.text.indexOf('\n', this.offset);
-    if ( lineEnd === -1 ) {
-        lineEnd = this.text.indexOf('\r', this.offset);
-        if ( lineEnd === -1 ) {
-            lineEnd = this.textLen;
+    next(offset) {
+        if ( offset !== undefined ) {
+            this.offset += offset;
         }
+        let lineEnd = this.text.indexOf('\n', this.offset);
+        if ( lineEnd === -1 ) {
+            lineEnd = this.text.indexOf('\r', this.offset);
+            if ( lineEnd === -1 ) {
+                lineEnd = this.textLen;
+            }
+        }
+        const line = this.text.slice(this.offset, lineEnd);
+        this.offset = lineEnd + 1;
+        return line;
     }
-    var line = this.text.slice(this.offset, lineEnd);
-    this.offset = lineEnd + 1;
-    return line;
-};
-
-µBlock.LineIterator.prototype.charCodeAt = function(offset) {
-    return this.text.charCodeAt(this.offset + offset);
-};
-
-µBlock.LineIterator.prototype.eot = function() {
-    return this.offset >= this.textLen;
+    peek(n) {
+        const offset = this.offset;
+        return this.text.slice(offset, offset + n);
+    }
+    charCodeAt(offset) {
+        return this.text.charCodeAt(this.offset + offset);
+    }
+    eot() {
+        return this.offset >= this.textLen;
+    }
 };
 
 /******************************************************************************/
@@ -195,31 +95,30 @@
 // The field iterator is less CPU-intensive than when using native
 // String.split().
 
-µBlock.FieldIterator = function(sep) {
-    this.text = '';
-    this.sep = sep;
-    this.sepLen = sep.length;
-    this.offset = 0;
-};
-
-µBlock.FieldIterator.prototype.first = function(text) {
-    this.text = text;
-    this.offset = 0;
-    return this.next();
-};
-
-µBlock.FieldIterator.prototype.next = function() {
-    var end = this.text.indexOf(this.sep, this.offset);
-    if ( end === -1 ) {
-        end = this.text.length;
+µBlock.FieldIterator = class {
+    constructor(sep) {
+        this.text = '';
+        this.sep = sep;
+        this.sepLen = sep.length;
+        this.offset = 0;
     }
-    var field = this.text.slice(this.offset, end);
-    this.offset = end + this.sepLen;
-    return field;
-};
-
-µBlock.FieldIterator.prototype.remainder = function() {
-    return this.text.slice(this.offset);
+    first(text) {
+        this.text = text;
+        this.offset = 0;
+        return this.next();
+    }
+    next() {
+        let end = this.text.indexOf(this.sep, this.offset);
+        if ( end === -1 ) {
+            end = this.text.length;
+        }
+        const field = this.text.slice(this.offset, end);
+        this.offset = end + this.sepLen;
+        return field;
+    }
+    remainder() {
+        return this.text.slice(this.offset);
+    }
 };
 
 /******************************************************************************/
@@ -230,128 +129,97 @@
     blockStartPrefix: '#block-start-',  // ensure no special regex characters
     blockEndPrefix: '#block-end-',      // ensure no special regex characters
 
-    Writer: function() {
-        this.io = µBlock.CompiledLineIO;
-        this.blockId = undefined;
-        this.block = undefined;
-        this.stringifier = this.io.serialize;
-        this.blocks = new Map();
-        this.properties = new Map();
-    },
-
-    Reader: function(raw, blockId) {
-        this.io = µBlock.CompiledLineIO;
-        this.block = '';
-        this.len = 0;
-        this.offset = 0;
-        this.line = '';
-        this.parser = this.io.unserialize;
-        this.blocks = new Map();
-        this.properties = new Map();
-        let reBlockStart = new RegExp(
-            '^' + this.io.blockStartPrefix + '(\\d+)\\n',
-            'gm'
-        );
-        let match = reBlockStart.exec(raw);
-        while ( match !== null ) {
-            let beg = match.index + match[0].length;
-            let end = raw.indexOf(this.io.blockEndPrefix + match[1], beg);
-            this.blocks.set(parseInt(match[1], 10), raw.slice(beg, end));
-            reBlockStart.lastIndex = end;
-            match = reBlockStart.exec(raw);
+    Writer: class {
+        constructor() {
+            this.io = µBlock.CompiledLineIO;
+            this.blockId = undefined;
+            this.block = undefined;
+            this.stringifier = this.io.serialize;
+            this.blocks = new Map();
+            this.properties = new Map();
         }
-        if ( blockId !== undefined ) {
-            this.select(blockId);
+        push(args) {
+            this.block.push(this.stringifier(args));
         }
-    }
-};
-
-µBlock.CompiledLineIO.Writer.prototype = {
-    push: function(args) {
-        this.block[this.block.length] = this.stringifier(args);
-    },
-    select: function(blockId) {
-        if ( blockId === this.blockId ) { return; }
-        this.blockId = blockId;
-        this.block = this.blocks.get(blockId);
-        if ( this.block === undefined ) {
-            this.blocks.set(blockId, (this.block = []));
-        }
-    },
-    toString: function() {
-        let result = [];
-        for ( let [ id, lines ] of this.blocks ) {
-            if ( lines.length === 0 ) { continue; }
-            result.push(
-                this.io.blockStartPrefix + id,
-                lines.join('\n'),
-                this.io.blockEndPrefix + id
-            );
-        }
-        return result.join('\n');
-    }
-};
-
-µBlock.CompiledLineIO.Reader.prototype = {
-    next: function() {
-        if ( this.offset === this.len ) {
-            this.line = '';
-            return false;
-        }
-        let pos = this.block.indexOf('\n', this.offset);
-        if ( pos !== -1 ) {
-            this.line = this.block.slice(this.offset, pos);
-            this.offset = pos + 1;
-        } else {
-            this.line = this.block.slice(this.offset);
-            this.offset = this.len;
-        }
-        return true;
-    },
-    select: function(blockId) {
-        this.block = this.blocks.get(blockId) || '';
-        this.len = this.block.length;
-        this.offset = 0;
-        return this;
-    },
-    fingerprint: function() {
-        return this.line;
-    },
-    args: function() {
-        return this.parser(this.line);
-    }
-};
-
-/******************************************************************************/
-
-// I want this helper to be self-maintained, callers must not worry about
-// this helper cleaning after itself by asking them to reset it when it is no
-// longer needed. A timer will be used for self-garbage-collect.
-// Cleaning up 10s after last hit sounds reasonable.
-
-µBlock.stringDeduplicater = {
-    strings: new Map(),
-    timer: undefined,
-    last: 0,
-
-    lookup: function(s) {
-        let t = this.strings.get(s);
-        if ( t === undefined ) {
-            t = this.strings.set(s, s).get(s);
-            if ( this.timer === undefined ) {
-                this.timer = vAPI.setTimeout(() => { this.cleanup(); }, 10000);
+        last() {
+            if ( Array.isArray(this.block) && this.block.length !== 0 ) {
+                return this.block[this.block.length - 1];
             }
         }
-        this.last = Date.now();
-        return t;
+        select(blockId) {
+            if ( blockId === this.blockId ) { return; }
+            this.blockId = blockId;
+            this.block = this.blocks.get(blockId);
+            if ( this.block === undefined ) {
+                this.blocks.set(blockId, (this.block = []));
+            }
+        }
+        toString() {
+            let result = [];
+            for ( let [ id, lines ] of this.blocks ) {
+                if ( lines.length === 0 ) { continue; }
+                result.push(
+                    this.io.blockStartPrefix + id,
+                    lines.join('\n'),
+                    this.io.blockEndPrefix + id
+                );
+            }
+            return result.join('\n');
+        }
     },
 
-    cleanup: function() {
-        if ( (Date.now() - this.last) < 10000 ) {
-            this.timer = vAPI.setTimeout(() => { this.cleanup(); }, 10000);
-        } else {
-            this.timer = undefined;
-            this.strings.clear();
+    Reader: class {
+        constructor(raw, blockId) {
+            this.io = µBlock.CompiledLineIO;
+            this.block = '';
+            this.len = 0;
+            this.offset = 0;
+            this.line = '';
+            this.parser = this.io.unserialize;
+            this.blocks = new Map();
+            this.properties = new Map();
+            let reBlockStart = new RegExp(
+                '^' + this.io.blockStartPrefix + '(\\d+)\\n',
+                'gm'
+            );
+            let match = reBlockStart.exec(raw);
+            while ( match !== null ) {
+                let beg = match.index + match[0].length;
+                let end = raw.indexOf(this.io.blockEndPrefix + match[1], beg);
+                this.blocks.set(parseInt(match[1], 10), raw.slice(beg, end));
+                reBlockStart.lastIndex = end;
+                match = reBlockStart.exec(raw);
+            }
+            if ( blockId !== undefined ) {
+                this.select(blockId);
+            }
+        }
+        next() {
+            if ( this.offset === this.len ) {
+                this.line = '';
+                return false;
+            }
+            let pos = this.block.indexOf('\n', this.offset);
+            if ( pos !== -1 ) {
+                this.line = this.block.slice(this.offset, pos);
+                this.offset = pos + 1;
+            } else {
+                this.line = this.block.slice(this.offset);
+                this.offset = this.len;
+            }
+            return true;
+        }
+        select(blockId) {
+            this.block = this.blocks.get(blockId) || '';
+            this.len = this.block.length;
+            this.offset = 0;
+            return this;
+        }
+        fingerprint() {
+            return this.line;
+        }
+        args() {
+            return this.parser(this.line);
         }
     }
 };
@@ -366,8 +234,8 @@
                 !this.userSettings.alwaysDetachLogger
             );
         }
-        details.popup = this.userSettings.alwaysDetachLogger;
-        if ( details.popup ) {
+        if ( this.userSettings.alwaysDetachLogger ) {
+            details.popup = this.hiddenSettings.loggerPopupType;
             const url = new URL(vAPI.getURL(details.url));
             url.searchParams.set('popup', '1');
             details.url = url.href;
@@ -388,16 +256,15 @@
 
 /******************************************************************************/
 
-µBlock.MRUCache = function(size) {
-    this.size = size;
-    this.array = [];
-    this.map = new Map();
-    this.resetTime = Date.now();
-};
-
-µBlock.MRUCache.prototype = {
-    add: function(key, value) {
-        var found = this.map.has(key);
+µBlock.MRUCache = class {
+    constructor(size) {
+        this.size = size;
+        this.array = [];
+        this.map = new Map();
+        this.resetTime = Date.now();
+    }
+    add(key, value) {
+        const found = this.map.has(key);
         this.map.set(key, value);
         if ( !found ) {
             if ( this.array.length === this.size ) {
@@ -405,24 +272,24 @@
             }
             this.array.unshift(key);
         }
-    },
-    remove: function(key) {
+    }
+    remove(key) {
         if ( this.map.has(key) ) {
             this.array.splice(this.array.indexOf(key), 1);
         }
-    },
-    lookup: function(key) {
-        var value = this.map.get(key);
+    }
+    lookup(key) {
+        const value = this.map.get(key);
         if ( value !== undefined && this.array[0] !== key ) {
-            var i = this.array.indexOf(key);
+            let i = this.array.indexOf(key);
             do {
                 this.array[i] = this.array[i-1];
             } while ( --i );
             this.array[0] = key;
         }
         return value;
-    },
-    reset: function() {
+    }
+    reset() {
         this.array = [];
         this.map.clear();
         this.resetTime = Date.now();
@@ -439,27 +306,27 @@
 
 /******************************************************************************/
 
-µBlock.decomposeHostname = (function() {
+µBlock.decomposeHostname = (( ) => {
     // For performance purpose, as simple tests as possible
-    let reHostnameVeryCoarse = /[g-z_-]/;
-    let reIPv4VeryCoarse = /\.\d+$/;
+    const reHostnameVeryCoarse = /[g-z_-]/;
+    const reIPv4VeryCoarse = /\.\d+$/;
 
-    let toBroaderHostname = function(hostname) {
-        let pos = hostname.indexOf('.');
+    const toBroaderHostname = function(hostname) {
+        const pos = hostname.indexOf('.');
         if ( pos !== -1 ) {
             return hostname.slice(pos + 1);
         }
         return hostname !== '*' && hostname !== '' ? '*' : '';
     };
 
-    let toBroaderIPv4Address = function(ipaddress) {
+    const toBroaderIPv4Address = function(ipaddress) {
         if ( ipaddress === '*' || ipaddress === '' ) { return ''; }
-        let pos = ipaddress.lastIndexOf('.');
+        const pos = ipaddress.lastIndexOf('.');
         if ( pos === -1 ) { return '*'; }
         return ipaddress.slice(0, pos);
     };
 
-    let toBroaderIPv6Address = function(ipaddress) {
+    const toBroaderIPv6Address = function(ipaddress) {
         return ipaddress !== '*' && ipaddress !== '' ? '*' : '';
     };
 
@@ -499,174 +366,225 @@
 
 /******************************************************************************/
 
-// Custom base128 encoder/decoder
-//
-// TODO:
-//   Could expand the LZ4 codec API to be able to return UTF8-safe string
-//   representation of a compressed buffer, and thus the code below could be
-//   moved LZ4 codec-side.
+// Custom base64 codecs. These codecs are meant to encode/decode typed arrays
+// to/from strings.
+
 // https://github.com/uBlockOrigin/uBlock-issues/issues/461
 //   Provide a fallback encoding for Chromium 59 and less by issuing a plain
 //   JSON string. The fallback can be removed once min supported version is
 //   above 59.
 
-µBlock.base128 = {
-    encode: function(arrbuf, arrlen) {
-        if (
-            vAPI.webextFlavor.soup.has('chromium') &&
-            vAPI.webextFlavor.major < 60
-        ) {
-            return this.encodeJSON(arrbuf);
+// TODO: rename µBlock.base64 to µBlock.SparseBase64, now that
+//       µBlock.DenseBase64 has been introduced.
+// TODO: Should no longer need to test presence of TextEncoder/TextDecoder.
+
+{
+    const valToDigit = new Uint8Array(64);
+    const digitToVal = new Uint8Array(128);
+    {
+        const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@%';
+        for ( let i = 0, n = chars.length; i < n; i++ ) {
+            const c = chars.charCodeAt(i);
+            valToDigit[i] = c;
+            digitToVal[c] = i;
         }
-        return this.encodeBase128(arrbuf, arrlen);
-    },
-    encodeBase128: function(arrbuf, arrlen) {
-        const inbuf = new Uint8Array(arrbuf, 0, arrlen);
-        const inputLength = arrlen;
-        let _7cnt = Math.floor(inputLength / 7);
-        let outputLength = _7cnt * 8;
-        let _7rem = inputLength % 7;
-        if ( _7rem !== 0 ) {
-            outputLength += 1 + _7rem;
-        }
-        const outbuf = new Uint8Array(outputLength);
-        let msbits, v;
-        let i = 0, j = 0;
-        while ( _7cnt--  ) {
-            v = inbuf[i+0];
-            msbits  = (v & 0x80) >>> 7;
-            outbuf[j+1] = v & 0x7F;
-            v = inbuf[i+1];
-            msbits |= (v & 0x80) >>> 6;
-            outbuf[j+2] = v & 0x7F;
-            v = inbuf[i+2];
-            msbits |= (v & 0x80) >>> 5;
-            outbuf[j+3] = v & 0x7F;
-            v = inbuf[i+3];
-            msbits |= (v & 0x80) >>> 4;
-            outbuf[j+4] = v & 0x7F;
-            v = inbuf[i+4];
-            msbits |= (v & 0x80) >>> 3;
-            outbuf[j+5] = v & 0x7F;
-            v = inbuf[i+5];
-            msbits |= (v & 0x80) >>> 2;
-            outbuf[j+6] = v & 0x7F;
-            v = inbuf[i+6];
-            msbits |= (v & 0x80) >>> 1;
-            outbuf[j+7] = v & 0x7F;
-            outbuf[j+0] = msbits;
-            i += 7; j += 8;
-        }
-        if ( _7rem > 0 ) {
-            msbits = 0;
-            for ( let ir = 0; ir < _7rem; ir++ ) {
-                v = inbuf[i+ir];
-                msbits |= (v & 0x80) >>> (7 - ir);
-                outbuf[j+ir+1] = v & 0x7F;
+    }
+
+    // The sparse base64 codec is best for buffers which contains a lot of
+    // small u32 integer values. Those small u32 integer values are better
+    // represented with stringified integers, because small values can be
+    // represented with fewer bits than the usual base64 codec. For example,
+    // 0 become '0 ', i.e. 16 bits instead of 48 bits with official base64
+    // codec.
+
+    µBlock.base64 = {
+        magic: 'Base64_1',
+
+        encode: function(arrbuf, arrlen) {
+            const inputLength = (arrlen + 3) >>> 2;
+            const inbuf = new Uint32Array(arrbuf, 0, inputLength);
+            const outputLength = this.magic.length + 7 + inputLength * 7;
+            const outbuf = new Uint8Array(outputLength);
+            // magic bytes
+            let j = 0;
+            for ( let i = 0; i < this.magic.length; i++ ) {
+                outbuf[j++] = this.magic.charCodeAt(i);
             }
-            outbuf[j+0] = msbits;
-        }
-        const textDecoder = new TextDecoder();
-        return textDecoder.decode(outbuf);
-    },
-    encodeJSON: function(arrbuf) {
-        return JSON.stringify(Array.from(new Uint32Array(arrbuf)));
-    },
-    // TODO:
-    //   Surprisingly, there does not seem to be any performance gain when
-    //   first converting the input string into a Uint8Array through
-    //   TextEncoder. Investigate again to confirm original findings and
-    //   to find out whether results have changed. Not using TextEncoder()
-    //   to create an intermediate input buffer lower peak memory usage
-    //   at selfie load time.
-    //
-    //   const textEncoder = new TextEncoder();
-    //   const inbuf = textEncoder.encode(instr);
-    //   const inputLength = inbuf.byteLength;
-    decode: function(instr, arrbuf) {
-        if ( instr.length === 0 ) { return; }
-        if ( instr.charCodeAt(0) === 0x5B /* '[' */ ) {
-            const outbuf = this.decodeJSON(instr, arrbuf);
-            if ( outbuf !== undefined ) {
+            // array size
+            let v = inputLength;
+            do {
+                outbuf[j++] = valToDigit[v & 0b111111];
+                v >>>= 6;
+            } while ( v !== 0 );
+            outbuf[j++] = 0x20 /* ' ' */;
+            // array content
+            for ( let i = 0; i < inputLength; i++ ) {
+                v = inbuf[i];
+                do {
+                    outbuf[j++] = valToDigit[v & 0b111111];
+                    v >>>= 6;
+                } while ( v !== 0 );
+                outbuf[j++] = 0x20 /* ' ' */;
+            }
+            if ( typeof TextDecoder === 'undefined' ) {
+                return JSON.stringify(
+                    Array.from(new Uint32Array(outbuf.buffer, 0, j >>> 2))
+                );
+            }
+            const textDecoder = new TextDecoder();
+            return textDecoder.decode(new Uint8Array(outbuf.buffer, 0, j));
+        },
+
+        decode: function(instr, arrbuf) {
+            if ( instr.charCodeAt(0) === 0x5B /* '[' */ ) {
+                const inbuf = JSON.parse(instr);
+                if ( arrbuf instanceof ArrayBuffer === false ) {
+                    return new Uint32Array(inbuf);
+                }
+                const outbuf = new Uint32Array(arrbuf);
+                outbuf.set(inbuf);
                 return outbuf;
             }
-        }
-        if (
-            vAPI.webextFlavor.soup.has('chromium') &&
-            vAPI.webextFlavor.major < 60
-        ) {
-            throw new Error('Unexpected µBlock.base128 encoding');
-        }
-        return this.decodeBase128(instr, arrbuf);
-    },
-    decodeBase128: function(instr, arrbuf) {
-        const inputLength = instr.length;
-        let _8cnt = inputLength >>> 3;
-        let outputLength = _8cnt * 7;
-        let _8rem = inputLength % 8;
-        if ( _8rem !== 0 ) {
-            outputLength += _8rem - 1;
-        }
-        const outbuf = arrbuf instanceof ArrayBuffer === false
-            ? new Uint8Array(outputLength)
-            : new Uint8Array(arrbuf);
-        let msbits;
-        let i = 0, j = 0;
-        while ( _8cnt-- ) {
-            msbits = instr.charCodeAt(i+0);
-            outbuf[j+0] = msbits << 7 & 0x80 | instr.charCodeAt(i+1);
-            outbuf[j+1] = msbits << 6 & 0x80 | instr.charCodeAt(i+2);
-            outbuf[j+2] = msbits << 5 & 0x80 | instr.charCodeAt(i+3);
-            outbuf[j+3] = msbits << 4 & 0x80 | instr.charCodeAt(i+4);
-            outbuf[j+4] = msbits << 3 & 0x80 | instr.charCodeAt(i+5);
-            outbuf[j+5] = msbits << 2 & 0x80 | instr.charCodeAt(i+6);
-            outbuf[j+6] = msbits << 1 & 0x80 | instr.charCodeAt(i+7);
-            i += 8; j += 7;
-        }
-        if ( _8rem > 1 ) {
-            msbits = instr.charCodeAt(i+0);
-            for ( let ir = 1; ir < _8rem; ir++ ) {
-                outbuf[j+ir-1] = msbits << (8-ir) & 0x80 | instr.charCodeAt(i+ir);
+            if ( instr.startsWith(this.magic) === false ) {
+                throw new Error('Invalid µBlock.base64 encoding');
             }
-        }
-        return outbuf;
-    },
-    decodeJSON: function(instr, arrbuf) {
-        let buf;
-        try {
-            buf = JSON.parse(instr);
-        } catch (ex) {
-        }
-        if ( Array.isArray(buf) === false ) { return; }
-        const outbuf = arrbuf instanceof ArrayBuffer === false
-            ? new Uint32Array(buf.length << 2)
-            : new Uint32Array(arrbuf);
-        outbuf.set(buf);
-        return new Uint8Array(outbuf.buffer);
-    },
-    decodeSize: function(instr) {
-        if ( instr.length === 0 ) { return 0; }
-        if ( instr.charCodeAt(0) === 0x5B /* '[' */ ) {
-            let buf;
-            try {
-                buf = JSON.parse(instr);
-            } catch (ex) {
+            const inputLength = instr.length;
+            const outputLength = this.decodeSize(instr) >> 2;
+            const outbuf = arrbuf instanceof ArrayBuffer === false
+                ? new Uint32Array(outputLength)
+                : new Uint32Array(arrbuf);
+            let i = instr.indexOf(' ', this.magic.length) + 1;
+            if ( i === -1 ) {
+                throw new Error('Invalid µBlock.base64 encoding');
             }
-            if ( Array.isArray(buf) ) {
-                return buf.length << 2;
+            // array content
+            let j = 0;
+            for (;;) {
+                if ( j === outputLength || i >= inputLength ) { break; }
+                let v = 0, l = 0;
+                for (;;) {
+                    const c = instr.charCodeAt(i++);
+                    if ( c === 0x20 /* ' ' */ ) { break; }
+                    v += digitToVal[c] << l;
+                    l += 6;
+                }
+                outbuf[j++] = v;
             }
-        }
-        if (
-            vAPI.webextFlavor.soup.has('chromium') &&
-            vAPI.webextFlavor.major < 60
-        ) {
-            throw new Error('Unexpected µBlock.base128 encoding');
-        }
-        const size = (instr.length >>> 3) * 7;
-        const rem = instr.length & 7;
-        return rem === 0 ? size : size + rem - 1;
-    },
-};
+            if ( i < inputLength || j < outputLength ) {
+                throw new Error('Invalid µBlock.base64 encoding');
+            }
+            return outbuf;
+        },
+
+        decodeSize: function(instr) {
+            if ( instr.startsWith(this.magic) === false ) { return 0; }
+            let v = 0, l = 0, i = this.magic.length;
+            for (;;) {
+                const c = instr.charCodeAt(i++);
+                if ( c === 0x20 /* ' ' */ ) { break; }
+                v += digitToVal[c] << l;
+                l += 6;
+            }
+            return v << 2;
+        },
+    };
+
+    // The dense base64 codec is best for typed buffers which values are
+    // more random. For example, buffer contents as a result of compression
+    // contain less repetitive values and thus the content is more
+    // random-looking.
+
+    // TODO: Investigate that in Firefox, creating a new Uint8Array from the
+    //       ArrayBuffer fails, the content of the resulting Uint8Array is
+    //       non-sensical. WASM-related?
+
+    µBlock.denseBase64 = {
+        magic: 'DenseBase64_1',
+
+        encode: function(input) {
+            const m = input.length % 3;
+            const n = input.length - m;
+            let outputLength = n / 3 * 4;
+            if ( m !== 0 ) {
+                outputLength += m + 1;
+            }
+            const output = new Uint8Array(outputLength);
+            let j = 0;
+            for ( let i = 0; i < n; i += 3) {
+                const i1 = input[i+0];
+                const i2 = input[i+1];
+                const i3 = input[i+2];
+                output[j+0] = valToDigit[                     i1 >>> 2];
+                output[j+1] = valToDigit[i1 << 4 & 0b110000 | i2 >>> 4];
+                output[j+2] = valToDigit[i2 << 2 & 0b111100 | i3 >>> 6];
+                output[j+3] = valToDigit[i3      & 0b111111           ];
+                j += 4;
+            }
+            if ( m !== 0 ) {
+                const i1 = input[n];
+                output[j+0] = valToDigit[i1 >>> 2];
+                if ( m === 1 ) {    // 1 value
+                    output[j+1] = valToDigit[i1 << 4 & 0b110000];
+                } else {            // 2 values
+                    const i2 = input[n+1];
+                    output[j+1] = valToDigit[i1 << 4 & 0b110000 | i2 >>> 4];
+                    output[j+2] = valToDigit[i2 << 2 & 0b111100           ];
+                }
+            }
+            const textDecoder = new TextDecoder();
+            const b64str = textDecoder.decode(output);
+            return this.magic + b64str;
+        },
+
+        decode: function(instr, arrbuf) {
+            if ( instr.startsWith(this.magic) === false ) {
+                throw new Error('Invalid µBlock.denseBase64 encoding');
+            }
+            const outputLength = this.decodeSize(instr);
+            const outbuf = arrbuf instanceof ArrayBuffer === false
+                ? new Uint8Array(outputLength)
+                : new Uint8Array(arrbuf);
+            const inputLength = instr.length - this.magic.length;
+            let i = this.magic.length;
+            let j = 0;
+            const m = inputLength & 3;
+            const n = i + inputLength - m;
+            while ( i < n ) {
+                const i1 = digitToVal[instr.charCodeAt(i+0)];
+                const i2 = digitToVal[instr.charCodeAt(i+1)];
+                const i3 = digitToVal[instr.charCodeAt(i+2)];
+                const i4 = digitToVal[instr.charCodeAt(i+3)];
+                i += 4;
+                outbuf[j+0] = i1 << 2              | i2 >>> 4;
+                outbuf[j+1] = i2 << 4 & 0b11110000 | i3 >>> 2;
+                outbuf[j+2] = i3 << 6 & 0b11000000 | i4;
+                j += 3;
+            }
+            if ( m !== 0 ) {
+                const i1 = digitToVal[instr.charCodeAt(i+0)];
+                const i2 = digitToVal[instr.charCodeAt(i+1)];
+                outbuf[j+0] = i1 << 2 | i2 >>> 4;
+                if ( m === 3 ) {
+                    const i3 = digitToVal[instr.charCodeAt(i+2)];
+                    outbuf[j+1] = i2 << 4 & 0b11110000 | i3 >>> 2;
+                }
+            }
+            return outbuf;
+        },
+
+        decodeSize: function(instr) {
+            if ( instr.startsWith(this.magic) === false ) { return 0; }
+            const inputLength = instr.length - this.magic.length;
+            const m = inputLength & 3;
+            const n = inputLength - m;
+            let outputLength = (n >>> 2) * 3;
+            if ( m !== 0 ) {
+                outputLength += m - 1;
+            }
+            return outputLength;
+        },
+    };
+}
 
 /******************************************************************************/
 
@@ -700,7 +618,7 @@
 // Rename ./tmp/requests.json.gz to something else if you no longer want
 // ./assets/requests.json in the build.
 
-µBlock.loadBenchmarkDataset = (function() {
+µBlock.loadBenchmarkDataset = (( ) => {
     let datasetPromise;
     let ttlTimer;
 
@@ -713,39 +631,55 @@
         vAPI.setTimeout(( ) => {
             ttlTimer = undefined;
             datasetPromise = undefined;
-        }, 60000);
+        }, 5 * 60 * 1000);
 
         if ( datasetPromise !== undefined ) {
             return datasetPromise;
         }
 
-        datasetPromise = new Promise(resolve => {
-            console.info(`Loading benchmark dataset...`);
-            const url = vAPI.getURL('/assets/requests.json');
-            µBlock.assets.fetchText(url, details => {
-                if ( details.error !== undefined ) {
-                    datasetPromise = undefined;
-                    console.info(`Not found: ${url}`);
-                    resolve();
-                    return;
+        const datasetURL = µBlock.hiddenSettings.benchmarkDatasetURL;
+        if ( datasetURL === 'unset' ) {
+            console.info(`No benchmark dataset available.`);
+            return Promise.resolve();
+        }
+        console.info(`Loading benchmark dataset...`);
+        datasetPromise = µBlock.assets.fetchText(datasetURL).then(details => {
+            console.info(`Parsing benchmark dataset...`);
+            const requests = [];
+            const lineIter = new µBlock.LineIterator(details.content);
+            while ( lineIter.eot() === false ) {
+                let request;
+                try {
+                    request = JSON.parse(lineIter.next());
+                } catch(ex) {
                 }
-                console.info(`Parsing benchmark dataset...`);
-                const requests = [];
-                const lineIter = new µBlock.LineIterator(details.content);
-                while ( lineIter.eot() === false ) {
-                    let request;
-                    try {
-                        request = JSON.parse(lineIter.next());
-                    } catch(ex) {
-                    }
-                    if ( request instanceof Object === false ) { continue; }
-                    if ( !request.frameUrl || !request.url ) { continue; }
-                    requests.push(request);
+                if ( request instanceof Object === false ) { continue; }
+                if ( !request.frameUrl || !request.url ) { continue; }
+                if ( request.cpt === 'document' ) {
+                    request.cpt = 'main_frame';
+                } else if ( request.cpt === 'xhr' ) {
+                    request.cpt = 'xmlhttprequest';
                 }
-                resolve(requests);
-            });
+                requests.push(request);
+            }
+            return requests;
+        }).catch(details => {
+            console.info(`Not found: ${details.url}`);
+            datasetPromise = undefined;
         });
 
         return datasetPromise;
     };
 })();
+
+/******************************************************************************/
+
+µBlock.fireDOMEvent = function(name) {
+    if (
+        window instanceof Object &&
+        window.dispatchEvent instanceof Function &&
+        window.CustomEvent instanceof Function
+    ) {
+        window.dispatchEvent(new CustomEvent(name));
+    }
+};

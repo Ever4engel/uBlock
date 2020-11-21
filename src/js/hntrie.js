@@ -20,9 +20,13 @@
 */
 
 /* globals WebAssembly */
-/* exported HNTrieContainer */
 
 'use strict';
+
+// *****************************************************************************
+// start of local namespace
+
+{
 
 /*******************************************************************************
 
@@ -40,8 +44,8 @@
   For example, `www.abc.com` is deemed matching `abc.com`, because the former
   is a subdomain of the latter. The opposite is of course not true.
 
-  The resulting read-only tries created as a result of using hnTrieManager are
-  simply just typed arrays filled with integers. The matching algorithm is
+  The resulting read-only tries created as a result of using HNTrieContainer
+  are simply just typed arrays filled with integers. The matching algorithm is
   just a matter of reading/comparing these integers, and further using them as
   indices in the array as a way to move around in the trie.
 
@@ -115,55 +119,54 @@
 
 */
 
-const HNTRIE_PAGE_SIZE   = 65536;
-                                                          // i32 /  i8
-const HNTRIE_TRIE0_SLOT  = 256 >>> 2;                     //  64 / 256
-const HNTRIE_TRIE1_SLOT  = HNTRIE_TRIE0_SLOT + 1;         //  65 / 260
-const HNTRIE_CHAR0_SLOT  = HNTRIE_TRIE0_SLOT + 2;         //  66 / 264
-const HNTRIE_CHAR1_SLOT  = HNTRIE_TRIE0_SLOT + 3;         //  67 / 268
-const HNTRIE_TRIE0_START = HNTRIE_TRIE0_SLOT + 4 << 2;    //       272
+const PAGE_SIZE   = 65536;
+                                            // i32 /  i8
+const TRIE0_SLOT  = 256 >>> 2;              //  64 / 256
+const TRIE1_SLOT  = TRIE0_SLOT + 1;         //  65 / 260
+const CHAR0_SLOT  = TRIE0_SLOT + 2;         //  66 / 264
+const CHAR1_SLOT  = TRIE0_SLOT + 3;         //  67 / 268
+const TRIE0_START = TRIE0_SLOT + 4 << 2;    //       272
 
+const roundToPageSize = v => (v + PAGE_SIZE-1) & ~(PAGE_SIZE-1);
 
-const HNTrieContainer = function(details) {
-    if ( details instanceof Object === false ) { details = {}; }
-    let len = (details.byteLength || 0) + HNTRIE_PAGE_SIZE-1 & ~(HNTRIE_PAGE_SIZE-1);
-    this.buf = new Uint8Array(Math.max(len, 131072));
-    this.buf32 = new Uint32Array(this.buf.buffer);
-    this.needle = '';
-    this.buf32[HNTRIE_TRIE0_SLOT] = HNTRIE_TRIE0_START;
-    this.buf32[HNTRIE_TRIE1_SLOT] = this.buf32[HNTRIE_TRIE0_SLOT];
-    this.buf32[HNTRIE_CHAR0_SLOT] = details.char0 || 65536;
-    this.buf32[HNTRIE_CHAR1_SLOT] = this.buf32[HNTRIE_CHAR0_SLOT];
-    this.wasmInstancePromise = null;
-    this.wasmMemory = null;
-    this.readyToUse();
-};
+const HNTrieContainer = class {
 
-HNTrieContainer.prototype = {
+    constructor() {
+        const len = PAGE_SIZE * 2;
+        this.buf = new Uint8Array(len);
+        this.buf32 = new Uint32Array(this.buf.buffer);
+        this.needle = '';
+        this.buf32[TRIE0_SLOT] = TRIE0_START;
+        this.buf32[TRIE1_SLOT] = this.buf32[TRIE0_SLOT];
+        this.buf32[CHAR0_SLOT] = len >>> 1;
+        this.buf32[CHAR1_SLOT] = this.buf32[CHAR0_SLOT];
+        this.wasmMemory = null;
+    }
 
     //--------------------------------------------------------------------------
     // Public methods
     //--------------------------------------------------------------------------
 
-    reset: function() {
-        this.buf32[HNTRIE_TRIE1_SLOT] = this.buf32[HNTRIE_TRIE0_SLOT];
-        this.buf32[HNTRIE_CHAR1_SLOT] = this.buf32[HNTRIE_CHAR0_SLOT];
-    },
-
-    readyToUse: function() {
-        if ( HNTrieContainer.wasmModulePromise instanceof Promise === false ) {
-            return Promise.resolve();
+    reset(details) {
+        if (
+            details instanceof Object &&
+            typeof details.byteLength === 'number' &&
+            typeof details.char0 === 'number'
+        ) {
+            if ( details.byteLength > this.buf.byteLength ) {
+                this.reallocateBuf(details.byteLength);
+            }
+            this.buf32[CHAR0_SLOT] = details.char0;
         }
-        return HNTrieContainer.wasmModulePromise.then(
-            module => this.initWASM(module)
-        );
-    },
+        this.buf32[TRIE1_SLOT] = this.buf32[TRIE0_SLOT];
+        this.buf32[CHAR1_SLOT] = this.buf32[CHAR0_SLOT];
+    }
 
-    setNeedle: function(needle) {
+    setNeedle(needle) {
         if ( needle !== this.needle ) {
             const buf = this.buf;
             let i = needle.length;
-            if ( i > 254 ) { i = 254; }
+            if ( i > 255 ) { i = 255; }
             buf[255] = i;
             while ( i-- ) {
                 buf[i] = needle.charCodeAt(i);
@@ -171,23 +174,26 @@ HNTrieContainer.prototype = {
             this.needle = needle;
         }
         return this;
-    },
+    }
 
-    matchesJS: function(iroot) {
-        const char0 = this.buf32[HNTRIE_CHAR0_SLOT];
-        let ineedle = this.buf[255];
-        let icell = iroot;
+    matchesJS(iroot) {
+        const buf32 = this.buf32;
+        const buf8 = this.buf;
+        const char0 = buf32[CHAR0_SLOT];
+        let ineedle = buf8[255];
+        let icell = buf32[iroot+0];
+        if ( icell === 0 ) { return -1; }
         for (;;) {
             if ( ineedle === 0 ) { return -1; }
             ineedle -= 1;
-            let c = this.buf[ineedle];
+            let c = buf8[ineedle];
             let v, i0;
             // find first segment with a first-character match
             for (;;) {
-                v = this.buf32[icell+2];
+                v = buf32[icell+2];
                 i0 = char0 + (v & 0x00FFFFFF);
-                if ( this.buf[i0] === c ) { break; }
-                icell = this.buf32[icell+0];
+                if ( buf8[i0] === c ) { break; }
+                icell = buf32[icell+0];
                 if ( icell === 0 ) { return -1; }
             }
             // all characters in segment must match
@@ -199,69 +205,70 @@ HNTrieContainer.prototype = {
                 const i1 = i0 + n;
                 do {
                     ineedle -= 1;
-                    if ( this.buf[i0] !== this.buf[ineedle] ) { return -1; }
+                    if ( buf8[i0] !== buf8[ineedle] ) { return -1; }
                     i0 += 1;
                 } while ( i0 < i1 );
             }
             // next segment
-            icell = this.buf32[icell+1];
+            icell = buf32[icell+1];
             if ( icell === 0 ) { break; }
-            if ( this.buf32[icell+2] === 0 ) {
-                if ( ineedle === 0 || this.buf[ineedle-1] === 0x2E ) {
+            if ( buf32[icell+2] === 0 ) {
+                if ( ineedle === 0 || buf8[ineedle-1] === 0x2E ) {
                     return ineedle;
                 }
-                icell = this.buf32[icell+1];
+                icell = buf32[icell+1];
             }
         }
-        return ineedle === 0 || this.buf[ineedle-1] === 0x2E ? ineedle : -1;
-    },
-    matchesWASM: null,
-    matches: null,
+        return ineedle === 0 || buf8[ineedle-1] === 0x2E ? ineedle : -1;
+    }
 
-    createOne: function(args) {
+    createOne(args) {
         if ( Array.isArray(args) ) {
             return new this.HNTrieRef(this, args[0], args[1]);
         }
         // grow buffer if needed
-        if ( (this.buf32[HNTRIE_CHAR0_SLOT] - this.buf32[HNTRIE_TRIE1_SLOT]) < 12 ) {
+        if ( (this.buf32[CHAR0_SLOT] - this.buf32[TRIE1_SLOT]) < 12 ) {
             this.growBuf(12, 0);
         }
-        const iroot = this.buf32[HNTRIE_TRIE1_SLOT] >>> 2;
-        this.buf32[HNTRIE_TRIE1_SLOT] += 12;
+        const iroot = this.buf32[TRIE1_SLOT] >>> 2;
+        this.buf32[TRIE1_SLOT] += 12;
         this.buf32[iroot+0] = 0;
         this.buf32[iroot+1] = 0;
         this.buf32[iroot+2] = 0;
         return new this.HNTrieRef(this, iroot, 0);
-    },
+    }
 
-    compileOne: function(trieRef) {
+    compileOne(trieRef) {
         return [ trieRef.iroot, trieRef.size ];
-    },
+    }
 
-    addJS: function(iroot) {
+    addJS(iroot) {
         let lhnchar = this.buf[255];
         if ( lhnchar === 0 ) { return 0; }
-        let icell = iroot;
-        // special case: first node in trie
-        if ( this.buf32[icell+2] === 0 ) {
-            this.buf32[icell+2] = this.addSegment(lhnchar);
-            return 1;
-        }
         // grow buffer if needed
         if (
-            (this.buf32[HNTRIE_CHAR0_SLOT] - this.buf32[HNTRIE_TRIE1_SLOT]) < 24 ||
-            (this.buf.length - this.buf32[HNTRIE_CHAR1_SLOT]) < 256
+            (this.buf32[CHAR0_SLOT] - this.buf32[TRIE1_SLOT]) < 24 ||
+            (this.buf.length - this.buf32[CHAR1_SLOT]) < 256
         ) {
             this.growBuf(24, 256);
         }
+        let icell = this.buf32[iroot+0];
+        // special case: first node in trie
+        if ( icell === 0 ) {
+            this.buf32[iroot+0] = this.addCell(0, 0, this.addSegment(lhnchar));
+            return 1;
+        }
         //
-        const char0 = this.buf32[HNTRIE_CHAR0_SLOT];
+        const char0 = this.buf32[CHAR0_SLOT];
         let inext;
         // find a matching cell: move down
         for (;;) {
             const vseg = this.buf32[icell+2];
             // skip boundary cells
             if ( vseg === 0 ) {
+                // remainder is at label boundary? if yes, no need to add
+                // the rest since the shortest match is always reported
+                if ( this.buf[lhnchar-1] === 0x2E /* '.' */ ) { return -1; }
                 icell = this.buf32[icell+1];
                 continue;
             }
@@ -306,6 +313,9 @@ HNTrieContainer.prototype = {
                         icell = inext;
                         continue;
                     }
+                    // remainder is at label boundary? if yes, no need to add
+                    // the rest since the shortest match is always reported
+                    if ( this.buf[lhnchar-1] === 0x2E /* '.' */ ) { return -1; }
                     // boundary cell + needle remainder
                     inext = this.addCell(0, 0, 0);
                     this.buf32[icell+1] = inext;
@@ -334,51 +344,49 @@ HNTrieContainer.prototype = {
             }
             return 1;
         }
-    },
-    addWASM: null,
-    add: null,
+    }
 
-    optimize: function() {
+    optimize() {
         this.shrinkBuf();
         return {
             byteLength: this.buf.byteLength,
-            char0: this.buf32[HNTRIE_CHAR0_SLOT],
+            char0: this.buf32[CHAR0_SLOT],
         };
-    },
+    }
 
-    fromIterable: function(hostnames, add) {
+    fromIterable(hostnames, add) {
         if ( add === undefined ) { add = 'add'; }
         const trieRef = this.createOne();
         for ( const hn of hostnames ) {
             trieRef[add](hn);
         }
         return trieRef;
-    },
+    }
 
-    serialize: function(encoder) {
+    serialize(encoder) {
         if ( encoder instanceof Object ) {
             return encoder.encode(
                 this.buf32.buffer,
-                this.buf32[HNTRIE_CHAR1_SLOT]
+                this.buf32[CHAR1_SLOT]
             );
         }
         return Array.from(
             new Uint32Array(
                 this.buf32.buffer,
                 0,
-                this.buf32[HNTRIE_CHAR1_SLOT] + 3 >>> 2
+                this.buf32[CHAR1_SLOT] + 3 >>> 2
             )
         );
-    },
+    }
 
-    unserialize: function(selfie, decoder) {
+    unserialize(selfie, decoder) {
         this.needle = '';
         const shouldDecode = typeof selfie === 'string';
         let byteLength = shouldDecode
             ? decoder.decodeSize(selfie)
             : selfie.length << 2;
-        byteLength = byteLength + HNTRIE_PAGE_SIZE-1 & ~(HNTRIE_PAGE_SIZE-1);
-        if ( byteLength === 0 ) { return; }
+        if ( byteLength === 0 ) { return false; }
+        byteLength = roundToPageSize(byteLength);
         if ( this.wasmMemory !== null ) {
             const pageCountBefore = this.buf.length >>> 16;
             const pageCountAfter = byteLength >>> 16;
@@ -396,75 +404,138 @@ HNTrieContainer.prototype = {
         } else {
             this.buf32.set(selfie);
         }
-    },
+        return true;
+    }
 
-    //--------------------------------------------------------------------------
-    // Class to hold reference to a specific trie
-    //--------------------------------------------------------------------------
+    // The following *Hostname() methods can be used to store hostname strings
+    // outside the trie. This is useful to store/match hostnames which are
+    // not part of a collection, and yet still benefit from storing the strings
+    // into a trie container's character buffer.
+    // TODO: WASM version of matchesHostname()
 
-    HNTrieRef: function(container, iroot, size) {
-        this.container = container;
-        this.iroot = iroot;
-        this.size = size;
-    },
+    storeHostname(hn) {
+        let n = hn.length;
+        if ( n > 255 ) {
+            hn = hn.slice(-255);
+            n = 255;
+        }
+        if ( (this.buf.length - this.buf32[CHAR1_SLOT]) < n ) {
+            this.growBuf(0, n);
+        }
+        const offset = this.buf32[CHAR1_SLOT];
+        this.buf32[CHAR1_SLOT] = offset + n;
+        const buf8 = this.buf;
+        for ( let i = 0; i < n; i++ ) {
+            buf8[offset+i] = hn.charCodeAt(i);
+        }
+        return offset - this.buf32[CHAR0_SLOT];
+    }
+
+    extractHostname(i, n) {
+        const textDecoder = new TextDecoder();
+        const offset = this.buf32[CHAR0_SLOT] + i;
+        return textDecoder.decode(this.buf.subarray(offset, offset + n));
+    }
+
+    matchesHostname(hn, i, n) {
+        this.setNeedle(hn);
+        const buf8 = this.buf;
+        const hr = buf8[255];
+        if ( n > hr ) { return false; }
+        const hl = hr - n;
+        const nl = this.buf32[CHAR0_SLOT] + i;
+        for ( let j = 0; j < n; j++ ) {
+            if ( buf8[nl+j] !== buf8[hl+j] ) { return false; }
+        }
+        return n === hr || hn.charCodeAt(hl-1) === 0x2E /* '.' */;
+    }
+
+    async enableWASM() {
+        if ( typeof WebAssembly !== 'object' ) { return false; }
+        if ( this.wasmMemory instanceof WebAssembly.Memory ) { return true; }
+        const module = await getWasmModule();
+        if ( module instanceof WebAssembly.Module === false ) { return false; }
+        const memory = new WebAssembly.Memory({ initial: 2 });
+        const instance = await WebAssembly.instantiate(module, {
+            imports: {
+                memory,
+                growBuf: this.growBuf.bind(this, 24, 256)
+            }
+        });
+        if ( instance instanceof WebAssembly.Instance === false ) {
+            return false;
+        }
+        this.wasmMemory = memory;
+        const curPageCount = memory.buffer.byteLength >>> 16;
+        const newPageCount = roundToPageSize(this.buf.byteLength) >>> 16;
+        if ( newPageCount > curPageCount ) {
+            memory.grow(newPageCount - curPageCount);
+        }
+        const buf = new Uint8Array(memory.buffer);
+        buf.set(this.buf);
+        this.buf = buf;
+        this.buf32 = new Uint32Array(this.buf.buffer);
+        this.matches = this.matchesWASM = instance.exports.matches;
+        this.add = this.addWASM = instance.exports.add;
+    }
 
     //--------------------------------------------------------------------------
     // Private methods
     //--------------------------------------------------------------------------
 
-    addCell: function(idown, iright, v) {
-        let icell = this.buf32[HNTRIE_TRIE1_SLOT];
-        this.buf32[HNTRIE_TRIE1_SLOT] = icell + 12;
+    addCell(idown, iright, v) {
+        let icell = this.buf32[TRIE1_SLOT];
+        this.buf32[TRIE1_SLOT] = icell + 12;
         icell >>>= 2;
         this.buf32[icell+0] = idown;
         this.buf32[icell+1] = iright;
         this.buf32[icell+2] = v;
         return icell;
-    },
+    }
 
-    addSegment: function(lsegchar) {
+    addSegment(lsegchar) {
         if ( lsegchar === 0 ) { return 0; }
-        let char1 = this.buf32[HNTRIE_CHAR1_SLOT];
-        const isegchar = char1 - this.buf32[HNTRIE_CHAR0_SLOT];
+        let char1 = this.buf32[CHAR1_SLOT];
+        const isegchar = char1 - this.buf32[CHAR0_SLOT];
         let i = lsegchar;
         do {
             this.buf[char1++] = this.buf[--i];
         } while ( i !== 0 );
-        this.buf32[HNTRIE_CHAR1_SLOT] = char1;
+        this.buf32[CHAR1_SLOT] = char1;
         return (lsegchar << 24) | isegchar;
-    },
+    }
 
-    growBuf: function(trieGrow, charGrow) {
+    growBuf(trieGrow, charGrow) {
         const char0 = Math.max(
-            (this.buf32[HNTRIE_TRIE1_SLOT] + trieGrow + HNTRIE_PAGE_SIZE-1) & ~(HNTRIE_PAGE_SIZE-1),
-            this.buf32[HNTRIE_CHAR0_SLOT]
+            roundToPageSize(this.buf32[TRIE1_SLOT] + trieGrow),
+            this.buf32[CHAR0_SLOT]
         );
-        const char1 = char0 + this.buf32[HNTRIE_CHAR1_SLOT] - this.buf32[HNTRIE_CHAR0_SLOT];
+        const char1 = char0 + this.buf32[CHAR1_SLOT] - this.buf32[CHAR0_SLOT];
         const bufLen = Math.max(
-            (char1 + charGrow + HNTRIE_PAGE_SIZE-1) & ~(HNTRIE_PAGE_SIZE-1),
+            roundToPageSize(char1 + charGrow),
             this.buf.length
         );
         this.resizeBuf(bufLen, char0);
-    },
+    }
 
-    shrinkBuf: function() {
+    shrinkBuf() {
         // Can't shrink WebAssembly.Memory
         if ( this.wasmMemory !== null ) { return; }
-        const char0 = this.buf32[HNTRIE_TRIE1_SLOT] + 24;
-        const char1 = char0 + this.buf32[HNTRIE_CHAR1_SLOT] - this.buf32[HNTRIE_CHAR0_SLOT];
+        const char0 = this.buf32[TRIE1_SLOT] + 24;
+        const char1 = char0 + this.buf32[CHAR1_SLOT] - this.buf32[CHAR0_SLOT];
         const bufLen = char1 + 256;
         this.resizeBuf(bufLen, char0);
-    },
+    }
 
-    resizeBuf: function(bufLen, char0) {
-        bufLen = bufLen + HNTRIE_PAGE_SIZE-1 & ~(HNTRIE_PAGE_SIZE-1);
+    resizeBuf(bufLen, char0) {
+        bufLen = roundToPageSize(bufLen);
         if (
             bufLen === this.buf.length &&
-            char0 === this.buf32[HNTRIE_CHAR0_SLOT]
+            char0 === this.buf32[CHAR0_SLOT]
         ) {
             return;
         }
-        const charDataLen = this.buf32[HNTRIE_CHAR1_SLOT] - this.buf32[HNTRIE_CHAR0_SLOT];
+        const charDataLen = this.buf32[CHAR1_SLOT] - this.buf32[CHAR0_SLOT];
         if ( this.wasmMemory !== null ) {
             const pageCount = (bufLen >>> 16) - (this.buf.byteLength >>> 16);
             if ( pageCount > 0 ) {
@@ -478,104 +549,150 @@ HNTrieContainer.prototype = {
                 new Uint8Array(
                     this.buf.buffer,
                     0,
-                    this.buf32[HNTRIE_TRIE1_SLOT]
+                    this.buf32[TRIE1_SLOT]
                 ),
                 0
             );
             newBuf.set(
                 new Uint8Array(
                     this.buf.buffer,
-                    this.buf32[HNTRIE_CHAR0_SLOT],
+                    this.buf32[CHAR0_SLOT],
                     charDataLen
                 ),
                 char0
             );
             this.buf = newBuf;
             this.buf32 = new Uint32Array(this.buf.buffer);
-            this.buf32[HNTRIE_CHAR0_SLOT] = char0;
-            this.buf32[HNTRIE_CHAR1_SLOT] = char0 + charDataLen;
+            this.buf32[CHAR0_SLOT] = char0;
+            this.buf32[CHAR1_SLOT] = char0 + charDataLen;
         }
-        if ( char0 !== this.buf32[HNTRIE_CHAR0_SLOT] ) {
+        if ( char0 !== this.buf32[CHAR0_SLOT] ) {
             this.buf.set(
                 new Uint8Array(
                     this.buf.buffer,
-                    this.buf32[HNTRIE_CHAR0_SLOT],
+                    this.buf32[CHAR0_SLOT],
                     charDataLen
                 ),
                 char0
             );
-            this.buf32[HNTRIE_CHAR0_SLOT] = char0;
-            this.buf32[HNTRIE_CHAR1_SLOT] = char0 + charDataLen;
+            this.buf32[CHAR0_SLOT] = char0;
+            this.buf32[CHAR1_SLOT] = char0 + charDataLen;
         }
-    },
+    }
 
-    initWASM: function(module) {
-        if ( module instanceof WebAssembly.Module === false ) {
-            return Promise.resolve(null);
-        }
-        if ( this.wasmInstancePromise === null ) {
-            const memory = new WebAssembly.Memory({ initial: 2 });
-            this.wasmInstancePromise = WebAssembly.instantiate(
-                module,
-                {
-                    imports: {
-                        memory,
-                        growBuf: this.growBuf.bind(this, 24, 256)
-                    }
-                }
+    reallocateBuf(newSize) {
+        newSize = roundToPageSize(newSize);
+        if ( newSize === this.buf.length ) { return; }
+        if ( this.wasmMemory === null ) {
+            const newBuf = new Uint8Array(newSize);
+            newBuf.set(
+                newBuf.length < this.buf.length
+                    ? this.buf.subarray(0, newBuf.length)
+                    : this.buf
             );
-            this.wasmInstancePromise.then(instance => {
-                this.wasmMemory = memory;
-                const pageCount = this.buf.byteLength + HNTRIE_PAGE_SIZE-1 >>> 16;
-                if ( pageCount > 1 ) {
-                    memory.grow(pageCount - 1);
-                }
-                const buf = new Uint8Array(memory.buffer);
-                buf.set(this.buf);
-                this.buf = buf;
-                this.buf32 = new Uint32Array(this.buf.buffer);
-                this.matches = this.matchesWASM = instance.exports.matches;
-                this.add = this.addWASM = instance.exports.add;
-            });
+            this.buf = newBuf;
+        } else {
+            const growBy =
+                ((newSize + 0xFFFF) >>> 16) - (this.buf.length >>> 16);
+            if ( growBy <= 0 ) { return; }
+            this.wasmMemory.grow(growBy);
+            this.buf = new Uint8Array(this.wasmMemory.buffer);
         }
-        return this.wasmInstancePromise;
-    },
+        this.buf32 = new Uint32Array(this.buf.buffer);
+    }
 };
 
-/******************************************************************************/
+HNTrieContainer.prototype.matches = HNTrieContainer.prototype.matchesJS;
+HNTrieContainer.prototype.matchesWASM = null;
 
-HNTrieContainer.prototype.HNTrieRef.prototype = {
-    add: function(hn) {
-        if ( this.container.setNeedle(hn).add(this.iroot) === 1 ) {
+HNTrieContainer.prototype.add = HNTrieContainer.prototype.addJS;
+HNTrieContainer.prototype.addWASM = null;
+
+/*******************************************************************************
+
+    Class to hold reference to a specific trie
+
+*/
+
+HNTrieContainer.prototype.HNTrieRef = class {
+
+    constructor(container, iroot, size) {
+        this.container = container;
+        this.iroot = iroot;
+        this.size = size;
+        this.needle = '';
+        this.last = -1;
+    }
+
+    add(hn) {
+        if ( this.container.setNeedle(hn).add(this.iroot) > 0 ) {
+            this.last = -1;
+            this.needle = '';
             this.size += 1;
             return true;
         }
         return false;
-    },
-    addJS: function(hn) {
-        if ( this.container.setNeedle(hn).addJS(this.iroot) === 1 ) {
+    }
+
+    addJS(hn) {
+        if ( this.container.setNeedle(hn).addJS(this.iroot) > 0 ) {
+            this.last = -1;
+            this.needle = '';
             this.size += 1;
             return true;
         }
         return false;
-    },
-    addWASM: function(hn) {
-        if ( this.container.setNeedle(hn).addWASM(this.iroot) === 1 ) {
+    }
+
+    addWASM(hn) {
+        if ( this.container.setNeedle(hn).addWASM(this.iroot) > 0 ) {
+            this.last = -1;
+            this.needle = '';
             this.size += 1;
             return true;
         }
         return false;
-    },
-    matches: function(needle) {
-        return this.container.setNeedle(needle).matches(this.iroot);
-    },
-    matchesJS: function(needle) {
-        return this.container.setNeedle(needle).matchesJS(this.iroot);
-    },
-    matchesWASM: function(needle) {
-        return this.container.setNeedle(needle).matchesWASM(this.iroot);
-    },
-    [Symbol.iterator]: function() {
+    }
+
+    matches(needle) {
+        if ( needle !== this.needle ) {
+            this.needle = needle;
+            this.last = this.container.setNeedle(needle).matches(this.iroot);
+        }
+        return this.last;
+    }
+
+    matchesJS(needle) {
+        if ( needle !== this.needle ) {
+            this.needle = needle;
+            this.last = this.container.setNeedle(needle).matchesJS(this.iroot);
+        }
+        return this.last;
+    }
+
+    matchesWASM(needle) {
+        if ( needle !== this.needle ) {
+            this.needle = needle;
+            this.last = this.container.setNeedle(needle).matchesWASM(this.iroot);
+        }
+        return this.last;
+    }
+
+    dump() {
+        let hostnames = Array.from(this);
+        if ( String.prototype.padStart instanceof Function ) {
+            const maxlen = Math.min(
+                hostnames.reduce((maxlen, hn) => Math.max(maxlen, hn.length), 0),
+                64
+            );
+            hostnames = hostnames.map(hn => hn.padStart(maxlen));
+        }
+        for ( const hn of hostnames ) {
+            console.log(hn);
+        }
+    }
+
+    [Symbol.iterator]() {
         return {
             value: undefined,
             done: false,
@@ -595,7 +712,7 @@ HNTrieContainer.prototype.HNTrieRef.prototype = {
                         this.forks.push(idown, this.charPtr);
                     }
                     const v = this.container.buf32[this.icell+2];
-                    let i0 = this.container.buf32[HNTRIE_CHAR0_SLOT] + (v & 0x00FFFFFF);
+                    let i0 = this.container.buf32[CHAR0_SLOT] + (v & 0x00FFFFFF);
                     const i1 = i0 + (v >>> 24);
                     while ( i0 < i1 ) {
                         this.charPtr -= 1;
@@ -625,8 +742,11 @@ HNTrieContainer.prototype.HNTrieRef.prototype = {
             forks: [],
             textDecoder: new TextDecoder()
         };
-    },
+    }
 };
+
+HNTrieContainer.prototype.HNTrieRef.prototype.last = -1;
+HNTrieContainer.prototype.HNTrieRef.prototype.needle = '';
 
 /******************************************************************************/
 
@@ -638,44 +758,8 @@ HNTrieContainer.prototype.HNTrieRef.prototype = {
 // The WASM module is entirely optional, the JS implementations will be
 // used should the WASM module be unavailable for whatever reason.
 
-(function() {
-    HNTrieContainer.wasmModulePromise = null;
-
-    // Default to javascript version.
-    HNTrieContainer.prototype.matches = HNTrieContainer.prototype.matchesJS;
-    HNTrieContainer.prototype.add = HNTrieContainer.prototype.addJS;
-
-    if (
-        typeof WebAssembly !== 'object' ||
-        typeof WebAssembly.compileStreaming !== 'function'
-    ) {
-        return;
-    }
-
-    // Soft-dependency on vAPI so that the code here can be used outside of
-    // uBO (i.e. tests, benchmarks)
-    if (
-        typeof vAPI === 'object' &&
-        vAPI.webextFlavor.soup.has('firefox') === false
-    ) {
-        return;
-    }
-
-    // Soft-dependency on µBlock's advanced settings so that the code here can
-    // be used outside of uBO (i.e. tests, benchmarks)
-    if (
-        typeof µBlock === 'object' &&
-        µBlock.hiddenSettings.disableWebAssembly === true
-    ) {
-        return;
-    }
-
-    // The wasm module will work only if CPU is natively little-endian,
-    // as we use native uint32 array in our js code.
-    const uint32s = new Uint32Array(1);
-    const uint8s = new Uint8Array(uint32s.buffer);
-    uint32s[0] = 1;
-    if ( uint8s[0] !== 1 ) { return; }
+const getWasmModule = (( ) => {
+    let wasmModulePromise;
 
     // The directory from which the current script was fetched should also
     // contain the related WASM file. The script is fetched from a trusted
@@ -690,13 +774,47 @@ HNTrieContainer.prototype.HNTrieRef.prototype = {
         workingDir = url.href;
     }
 
-    HNTrieContainer.wasmModulePromise = fetch(
-        workingDir + 'wasm/hntrie.wasm',
-        { mode: 'same-origin' }
-    ).then(
-        WebAssembly.compileStreaming
-    ).catch(reason => {
-        HNTrieContainer.wasmModulePromise = null;
-        log.info(reason);
-    });
+    return async function() {
+        if ( wasmModulePromise instanceof Promise ) {
+            return wasmModulePromise;
+        }
+
+        if (
+            typeof WebAssembly !== 'object' ||
+            typeof WebAssembly.compileStreaming !== 'function'
+        ) {
+            return;
+        }
+
+        // Soft-dependency on vAPI so that the code here can be used outside of
+        // uBO (i.e. tests, benchmarks)
+        if ( typeof vAPI === 'object' && vAPI.canWASM !== true ) { return; }
+
+        // The wasm module will work only if CPU is natively little-endian,
+        // as we use native uint32 array in our js code.
+        const uint32s = new Uint32Array(1);
+        const uint8s = new Uint8Array(uint32s.buffer);
+        uint32s[0] = 1;
+        if ( uint8s[0] !== 1 ) { return; }
+
+        wasmModulePromise = fetch(
+            workingDir + 'wasm/hntrie.wasm',
+            { mode: 'same-origin' }
+        ).then(
+            WebAssembly.compileStreaming
+        ).catch(reason => {
+            log.info(reason);
+        });
+
+        return wasmModulePromise;
+    };
 })();
+
+/******************************************************************************/
+
+µBlock.HNTrieContainer = HNTrieContainer;
+
+// end of local namespace
+// *****************************************************************************
+
+}
